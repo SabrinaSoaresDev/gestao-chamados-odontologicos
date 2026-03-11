@@ -59,7 +59,7 @@ export default function Login() {
           <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
             < UserIcon className="w-10 h-10 text-blue-600" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-800">DentalCare</h2>
+          <h2 className="text-3xl font-bold text-gray-800">chamados Odontologicos</h2>
           <p className="text-gray-500 mt-2">Sistema de Gestão de Chamados</p>
         </div>
 
