@@ -217,7 +217,7 @@ export default function Register() {
             <UserIcon className="w-10 h-10 text-blue-600" />
           </div>
           <h2 className="text-3xl font-bold text-gray-800">Criar Conta</h2>
-          <p className="text-gray-500 mt-2">Cadastre-se no Chamados Odontologicos</p>
+          <p className="text-gray-500 mt-2">Cadastre-se no Ortodonsist</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">

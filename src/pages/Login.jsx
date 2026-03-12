@@ -4,11 +4,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
-import {  UserIcon } from '@heroicons/react/24/outline';
+import { UserIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -57,9 +58,9 @@ export default function Login() {
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-8">
           <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-            < UserIcon className="w-10 h-10 text-blue-600" />
+            <UserIcon className="w-10 h-10 text-blue-600" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-800">Chamados Odontologicos</h2>
+          <h2 className="text-3xl font-bold text-gray-800">Ortodonsist</h2>
           <p className="text-gray-500 mt-2">Sistema de Gestão de Chamados</p>
         </div>
 
@@ -82,14 +83,27 @@ export default function Login() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Senha
             </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-12"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+              >
+                {showPassword ? (
+                  <EyeSlashIcon className="w-5 h-5" />
+                ) : (
+                  <EyeIcon className="w-5 h-5" />
+                )}
+              </button>
+            </div>
           </div>
 
           <button
@@ -105,7 +119,7 @@ export default function Login() {
             <Link to="/register" className="text-blue-600 hover:underline font-medium">
                 Cadastre-se
             </Link>
-            </p>
+          </p>
         </form>
       </div>
     </div>

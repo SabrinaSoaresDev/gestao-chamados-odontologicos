@@ -22,6 +22,7 @@ import DentistaChamados from './pages/Dentistas/Chamados';
 // Páginas do Técnico
 import TecnicoDashboard from './pages/Tecnico/Dashboard';
 import TecnicoChamados from './pages/Tecnico/Chamados';
+import OrdemServico from './pages/Tecnico/OrdemServico';
 
 // Componentes de Layout
 import Layout from './components/Layout';
@@ -122,6 +123,14 @@ function AppRoutes() {
         <PrivateRoute allowedRoles={['tecnico']}>
           <Layout currentPage="chamados">
             <TecnicoChamados />
+          </Layout>
+        </PrivateRoute>
+      } />
+
+      <Route path="/tecnico/OrdemServico" element={
+        <PrivateRoute allowedRoles={['tecnico']}>
+          <Layout currentPage="OrdemServico">
+            <OrdemServico />
           </Layout>
         </PrivateRoute>
       } />

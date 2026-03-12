@@ -24,7 +24,7 @@ export default function AdminConfiguracoes() {
   const [config, setConfig] = useState({
     // Informações da empresa
     empresa: {
-      nome: 'DentalCare',
+      nome: 'Ortodonsist',
       cnpj: '',
       endereco: '',
       telefone: '',

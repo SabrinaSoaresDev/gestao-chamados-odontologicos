@@ -15,7 +15,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   WrenchScrewdriverIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon, 
 } from '@heroicons/react/24/outline';
 import { db } from '../services/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -117,7 +117,14 @@ export default function Layout({ children }) {
       icon: ClipboardDocumentListIcon,
       path: `${basePath}/chamados`,
       roles: ['admin', 'dentista', 'tecnico']
-    }
+    },
+      {
+    id: 'ordem-servico',
+    name: 'Ordem de serviço',
+    icon: ChartBarIcon, 
+    path: '/tecnico/OrdemServico',
+    roles: ['tecnico']
+  }
   ];
 
   if (userData?.role === 'admin') {
@@ -206,7 +213,7 @@ export default function Layout({ children }) {
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
                   <span className="text-white font-bold text-base">D</span>
                 </div>
-                <h1 className="text-lg font-bold text-white">Chamados Odontologicos</h1>
+                <h1 className="text-lg font-bold text-white">Ortodonsist</h1>
               </div>
               
               {/* Badge de Role */}

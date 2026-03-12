@@ -391,7 +391,7 @@ export default function AdminDashboard() {
             Olá, {userData?.nome}! 
           </h1>
           <p className="text-gray-600">
-            Bem-vindo ao painel administrativo do DentalCare
+            Bem-vindo ao painel administrativo do Ortodonsist
           </p>
         </div>
         <div className="flex gap-3">

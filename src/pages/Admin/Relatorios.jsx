@@ -175,7 +175,7 @@ export default function Relatorios() {
     
     doc.setFontSize(18);
     doc.setTextColor(0, 51, 102);
-    doc.text('DentalCare - Relatório', 14, 20);
+    doc.text('Ortodonsist - Relatório', 14, 20);
     
     doc.setFontSize(12);
     doc.setTextColor(100);
