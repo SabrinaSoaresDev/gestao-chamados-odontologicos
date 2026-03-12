@@ -4,38 +4,39 @@ import {
   collection, 
   query, 
   onSnapshot,
-  orderBy 
+  orderBy,
+  where 
 } from 'firebase/firestore';
 import { 
-  XMarkIcon,
   DocumentArrowDownIcon,
-  CalendarIcon,
   ChartBarIcon,
   ClockIcon,
   UserGroupIcon,
   WrenchIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  FunnelIcon,
+  CalendarIcon,
+  ChevronDownIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
-export default function RelatoriosModal({ isOpen, onClose }) {
-  const [loading, setLoading] = useState(false);
+export default function Relatorios() {
+  const [loading, setLoading] = useState(true);
   const [chamados, setChamados] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [periodo, setPeriodo] = useState('mes');
   const [tipoRelatorio, setTipoRelatorio] = useState('geral');
-  const [formato, setFormato] = useState('pdf');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
+  const [showFiltros, setShowFiltros] = useState(false);
+  const [exportando, setExportando] = useState(false);
 
-  // Carregar dados quando o modal abrir
+  // Carregar dados
   useEffect(() => {
-    if (!isOpen) return;
-
-    setLoading(true);
-
     // Carregar chamados
     const chamadosQuery = query(
       collection(db, 'chamados'),
@@ -67,13 +68,13 @@ export default function RelatoriosModal({ isOpen, onClose }) {
       unsubscribeChamados();
       unsubscribeUsuarios();
     };
-  }, [isOpen]);
+  }, []);
 
   // Filtrar chamados por período
   const getChamadosFiltrados = () => {
     let filtrados = [...chamados];
 
-    if (periodo === 'personalizado' && dataInicio && dataFim) {
+    if (dataInicio && dataFim) {
       const inicio = new Date(dataInicio);
       const fim = new Date(dataFim);
       fim.setHours(23, 59, 59);
@@ -99,187 +100,29 @@ export default function RelatoriosModal({ isOpen, onClose }) {
     return filtrados;
   };
 
-  // Gerar PDF
-  const gerarPDF = (dados, tipo) => {
-    const doc = new jsPDF();
-    
-    // Título
-    doc.setFontSize(18);
-    doc.setTextColor(0, 51, 102);
-    doc.text('DentalCare - Relatório', 14, 20);
-    
-    // Subtítulo
-    doc.setFontSize(12);
-    doc.setTextColor(100);
-    doc.text(dados.tipo, 14, 30);
-    
-    // Período
-    doc.setFontSize(10);
-    doc.text(`Período: ${dados.periodo}`, 14, 38);
-    doc.text(`Data de geração: ${dados.dataGeracao}`, 14, 44);
-    
-    let yPos = 50;
+  const chamadosFiltrados = getChamadosFiltrados();
 
-    if (tipo === 'equipamentos') {
-      // Tabela de equipamentos
-      autoTable(doc, {
-        startY: yPos,
-        head: [['Equipamento', 'Quantidade de Chamados']],
-        body: dados.equipamentos.map(e => [e.nome, e.quantidade]),
-        theme: 'striped',
-        headStyles: { fillColor: [0, 51, 102] }
-      });
-    } 
-    else if (tipo === 'tecnicos') {
-      // Tabela de técnicos
-      autoTable(doc, {
-        startY: yPos,
-        head: [['Técnico', 'Chamados', 'Concluídos', 'Média']],
-        body: dados.tecnicos.map(t => [t.nome, t.chamadosAtendidos, t.concluidos, t.mediaAvaliacao]),
-        theme: 'striped',
-        headStyles: { fillColor: [0, 51, 102] }
-      });
-    }
-    else if (tipo === 'tempo') {
-      doc.text(`Tempo Médio Geral: ${dados.tempoMedioGeral} horas`, 14, yPos);
-      
-      autoTable(doc, {
-        startY: yPos + 10,
-        head: [['Técnico', 'Tempo Médio (horas)']],
-        body: dados.porTecnico.map(t => [t.nome, t.tempoMedio]),
-        theme: 'striped',
-        headStyles: { fillColor: [0, 51, 102] }
-      });
-    }
-    else {
-      // Relatório Geral
-      // Estatísticas
-      doc.setFontSize(12);
-      doc.setTextColor(0);
-      doc.text('Resumo Estatístico', 14, yPos);
-      
-      const stats = [
-        ['Total de Chamados', dados.estatisticas.total],
-        ['Abertos', dados.estatisticas.abertos],
-        ['Em Andamento', dados.estatisticas.andamento],
-        ['Concluídos', dados.estatisticas.concluidos],
-        ['Cancelados', dados.estatisticas.cancelados],
-        ['Tempo Médio', dados.estatisticas.tempoMedio + ' horas'],
-        ['Satisfação Média', dados.estatisticas.satisfacaoMedia + '/5']
-      ];
-      
-      autoTable(doc, {
-        startY: yPos + 10,
-        head: [['Métrica', 'Valor']],
-        body: stats,
-        theme: 'striped',
-        headStyles: { fillColor: [0, 51, 102] }
-      });
-      
-      // Tabela de chamados
-      yPos = doc.lastAutoTable.finalY + 10;
-      
-      doc.text('Detalhamento dos Chamados', 14, yPos);
-      
-      autoTable(doc, {
-        startY: yPos + 5,
-        head: [['ID', 'Título', 'Status', 'Prioridade', 'Técnico', 'Data']],
-        body: dados.chamados.slice(0, 20).map(c => [
-          c.id?.slice(-6),
-          c.titulo,
-          c.status,
-          c.prioridade,
-          c.tecnico,
-          c.dataAbertura
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [0, 51, 102] }
-      });
-    }
+  // Estatísticas
+  const stats = {
+    total: chamadosFiltrados.length,
+    abertos: chamadosFiltrados.filter(c => c.status === 'aberto').length,
+    andamento: chamadosFiltrados.filter(c => c.status === 'em_andamento').length,
+    concluidos: chamadosFiltrados.filter(c => c.status === 'concluido').length,
+    cancelados: chamadosFiltrados.filter(c => c.status === 'cancelado').length,
+    
+    urgentes: chamadosFiltrados.filter(c => c.prioridade === 'alta' || c.prioridade === 'emergencial').length,
+    media: chamadosFiltrados.filter(c => c.prioridade === 'media').length,
+    baixa: chamadosFiltrados.filter(c => c.prioridade === 'baixa').length,
 
-    // Salvar PDF
-    doc.save(`relatorio-${tipo}-${new Date().toISOString().split('T')[0]}.pdf`);
+    tempoMedio: calcularTempoMedio(),
+    satisfacaoMedia: calcularSatisfacaoMedia(),
+    
+    chamadosPorTecnico: agruparPorTecnico(),
+    chamadosPorEquipamento: agruparPorEquipamento()
   };
 
-  // Gerar dados do relatório baseado no tipo
-  const gerarDadosRelatorio = () => {
-    const chamadosFiltrados = getChamadosFiltrados();
-    
-    const tecnicos = usuarios.filter(u => u.role === 'tecnico');
-
-    // Estatísticas gerais
-    const stats = {
-      total: chamadosFiltrados.length,
-      abertos: chamadosFiltrados.filter(c => c.status === 'aberto').length,
-      andamento: chamadosFiltrados.filter(c => c.status === 'em_andamento').length,
-      concluidos: chamadosFiltrados.filter(c => c.status === 'concluido').length,
-      cancelados: chamadosFiltrados.filter(c => c.status === 'cancelado').length,
-      
-      tempoMedio: calcularTempoMedio(chamadosFiltrados),
-      satisfacaoMedia: calcularSatisfacaoMedia(chamadosFiltrados),
-      
-      chamadosPorEquipamento: agruparPorEquipamento(chamadosFiltrados)
-    };
-
-    switch(tipoRelatorio) {
-      case 'geral':
-        return {
-          tipo: 'Relatório Geral',
-          periodo: periodo,
-          dataGeracao: new Date().toLocaleString('pt-BR'),
-          estatisticas: stats,
-          chamados: chamadosFiltrados.map(c => ({
-            id: c.id,
-            titulo: c.titulo,
-            status: c.status,
-            prioridade: c.prioridade,
-            tecnico: c.tecnicoNome || 'Não atribuído',
-            solicitante: c.solicitanteNome,
-            dataAbertura: c.dataCriacao?.toLocaleDateString('pt-BR')
-          }))
-        };
-        
-      case 'tecnicos':
-        return {
-          tipo: 'Desempenho dos Técnicos',
-          periodo: periodo,
-          dataGeracao: new Date().toLocaleString('pt-BR'),
-          tecnicos: usuarios.filter(u => u.role === 'tecnico').map(t => ({
-            nome: t.nome,
-            email: t.email,
-            chamadosAtendidos: chamadosFiltrados.filter(c => c.tecnicoId === t.id).length,
-            concluidos: chamadosFiltrados.filter(c => c.tecnicoId === t.id && c.status === 'concluido').length,
-            mediaAvaliacao: calcularMediaAvaliacaoTecnico(t.id, chamadosFiltrados)
-          }))
-        };
-        
-      case 'equipamentos':
-        return {
-          tipo: 'Manutenção por Equipamento',
-          periodo: periodo,
-          dataGeracao: new Date().toLocaleString('pt-BR'),
-          equipamentos: stats.chamadosPorEquipamento
-        };
-        
-      case 'tempo':
-        return {
-          tipo: 'Tempo de Atendimento',
-          periodo: periodo,
-          dataGeracao: new Date().toLocaleString('pt-BR'),
-          tempoMedioGeral: stats.tempoMedio,
-          porTecnico: usuarios.filter(u => u.role === 'tecnico').map(t => ({
-            nome: t.nome,
-            tempoMedio: calcularTempoMedioTecnico(t.id, chamadosFiltrados)
-          }))
-        };
-        
-      default:
-        return {};
-    }
-  };
-
-  function calcularTempoMedio(chamados) {
-    const concluidos = chamados.filter(c => c.status === 'concluido' && c.dataCriacao && c.dataConclusao);
+  function calcularTempoMedio() {
+    const concluidos = chamadosFiltrados.filter(c => c.status === 'concluido' && c.dataCriacao && c.dataConclusao);
     if (concluidos.length === 0) return 0;
     
     const totalHoras = concluidos.reduce((acc, c) => {
@@ -290,17 +133,31 @@ export default function RelatoriosModal({ isOpen, onClose }) {
     return (totalHoras / concluidos.length).toFixed(1);
   }
 
-  function calcularSatisfacaoMedia(chamados) {
-    const avaliados = chamados.filter(c => c.avaliacao);
+  function calcularSatisfacaoMedia() {
+    const avaliados = chamadosFiltrados.filter(c => c.avaliacao);
     if (avaliados.length === 0) return 0;
     
     const soma = avaliados.reduce((acc, c) => acc + (c.avaliacao?.nota || 0), 0);
     return (soma / avaliados.length).toFixed(1);
   }
 
-  function agruparPorEquipamento(chamados) {
+  function agruparPorTecnico() {
+    const tecnicos = {};
+    chamadosFiltrados.forEach(c => {
+      if (c.tecnicoNome) {
+        tecnicos[c.tecnicoNome] = (tecnicos[c.tecnicoNome] || 0) + 1;
+      }
+    });
+    
+    return Object.entries(tecnicos)
+      .map(([nome, quantidade]) => ({ nome, quantidade }))
+      .sort((a, b) => b.quantidade - a.quantidade)
+      .slice(0, 5);
+  }
+
+  function agruparPorEquipamento() {
     const equipamentos = {};
-    chamados.forEach(c => {
+    chamadosFiltrados.forEach(c => {
       if (c.equipamento) {
         equipamentos[c.equipamento] = (equipamentos[c.equipamento] || 0) + 1;
       }
@@ -312,266 +169,321 @@ export default function RelatoriosModal({ isOpen, onClose }) {
       .slice(0, 5);
   }
 
-  function calcularMediaAvaliacaoTecnico(tecnicoId, chamados) {
-    const chamadosTecnico = chamados.filter(c => c.tecnicoId === tecnicoId && c.avaliacao);
-    if (chamadosTecnico.length === 0) return 0;
+  // Gerar PDF
+  const gerarPDF = () => {
+    const doc = new jsPDF();
     
-    const soma = chamadosTecnico.reduce((acc, c) => acc + (c.avaliacao?.nota || 0), 0);
-    return (soma / chamadosTecnico.length).toFixed(1);
-  }
+    doc.setFontSize(18);
+    doc.setTextColor(0, 51, 102);
+    doc.text('DentalCare - Relatório', 14, 20);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text(`Período: ${periodo}`, 14, 30);
+    doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 14, 38);
+    
+    // Estatísticas
+    autoTable(doc, {
+      startY: 45,
+      head: [['Métrica', 'Valor']],
+      body: [
+        ['Total de Chamados', stats.total],
+        ['Abertos', stats.abertos],
+        ['Em Andamento', stats.andamento],
+        ['Concluídos', stats.concluidos],
+        ['Cancelados', stats.cancelados],
+        ['Tempo Médio', stats.tempoMedio + 'h'],
+        ['Satisfação', stats.satisfacaoMedia + '/5']
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [0, 51, 102] }
+    });
 
-  function calcularTempoMedioTecnico(tecnicoId, chamados) {
-    const chamadosTecnico = chamados.filter(c => 
-      c.tecnicoId === tecnicoId && 
-      c.status === 'concluido' && 
-      c.dataCriacao && 
-      c.dataConclusao
-    );
-    
-    if (chamadosTecnico.length === 0) return 0;
-    
-    const totalHoras = chamadosTecnico.reduce((acc, c) => {
-      const diff = (c.dataConclusao - c.dataCriacao) / (1000 * 60 * 60);
-      return acc + diff;
-    }, 0);
-    
-    return (totalHoras / chamadosTecnico.length).toFixed(1);
-  }
+    doc.save(`relatorio-${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success('PDF gerado com sucesso!');
+  };
 
-  const handleGerarRelatorio = async () => {
-    setLoading(true);
+  // Gerar Excel
+  const gerarExcel = () => {
+    const dados = chamadosFiltrados.map(c => ({
+      ID: c.id?.slice(-6),
+      Título: c.titulo,
+      Equipamento: c.equipamento,
+      Status: c.status,
+      Prioridade: c.prioridade,
+      Técnico: c.tecnicoNome || 'Não atribuído',
+      'Data Abertura': c.dataCriacao?.toLocaleDateString('pt-BR'),
+      'Data Conclusão': c.dataConclusao?.toLocaleDateString('pt-BR') || '-'
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dados);
+    XLSX.utils.book_append_sheet(wb, ws, 'Chamados');
+    XLSX.writeFile(wb, `relatorio-${new Date().toISOString().split('T')[0]}.xlsx`);
     
+    toast.success('Excel gerado com sucesso!');
+  };
+
+  // Gerar CSV
+  const gerarCSV = () => {
+    const headers = ['ID', 'Título', 'Status', 'Prioridade', 'Técnico', 'Data'];
+    const linhas = chamadosFiltrados.map(c => [
+      c.id?.slice(-6),
+      c.titulo,
+      c.status,
+      c.prioridade,
+      c.tecnicoNome || 'Não atribuído',
+      c.dataCriacao?.toLocaleDateString('pt-BR')
+    ]);
+    
+    const csv = [headers, ...linhas].map(row => row.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `relatorio-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    
+    toast.success('CSV gerado com sucesso!');
+  };
+
+  const handleExportar = (formato) => {
+    setExportando(true);
     try {
-      const dados = gerarDadosRelatorio();
-      
-      if (formato === 'pdf') {
-        gerarPDF(dados, tipoRelatorio);
-        toast.success('PDF gerado com sucesso!');
-      } 
-      else if (formato === 'json') {
-        const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `relatorio-${tipoRelatorio}-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        toast.success('JSON gerado com sucesso!');
-      } 
-      else if (formato === 'csv') {
-        let csv = '';
-        
-        if (tipoRelatorio === 'equipamentos') {
-          const headers = ['Equipamento', 'Quantidade de Chamados'];
-          const linhas = dados.equipamentos.map(e => [e.nome, e.quantidade]);
-          csv = [headers, ...linhas].map(row => row.join(',')).join('\n');
-        } else {
-          const headers = ['ID', 'Título', 'Status', 'Prioridade', 'Técnico', 'Data'];
-          const linhas = dados.chamados?.map(c => [
-            c.id?.slice(-6),
-            c.titulo,
-            c.status,
-            c.prioridade,
-            c.tecnico,
-            c.dataAbertura
-          ]) || [];
-          csv = [headers, ...linhas].map(row => row.join(',')).join('\n');
-        }
-        
-        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `relatorio-${tipoRelatorio}-${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        toast.success('CSV gerado com sucesso!');
-      }
-
-      onClose();
-      
+      if (formato === 'pdf') gerarPDF();
+      if (formato === 'excel') gerarExcel();
+      if (formato === 'csv') gerarCSV();
     } catch (error) {
-      console.error('Erro ao gerar relatório:', error);
       toast.error('Erro ao gerar relatório');
     } finally {
-      setLoading(false);
+      setExportando(false);
     }
   };
 
-  const relatorios = [
-    {
-      id: 'geral',
-      nome: 'Relatório Geral',
-      descricao: 'Visão completa de todos os chamados',
-      icon: ChartBarIcon,
-      cor: 'blue'
-    },
-    {
-      id: 'tecnicos',
-      nome: 'Desempenho dos Técnicos',
-      descricao: 'Análise de produtividade da equipe',
-      icon: UserGroupIcon,
-      cor: 'green'
-    },
-    {
-      id: 'equipamentos',
-      nome: 'Manutenção por Equipamento',
-      descricao: 'Histórico de problemas por equipamento',
-      icon: WrenchIcon,
-      cor: 'purple'
-    },
-    {
-      id: 'tempo',
-      nome: 'Tempo de Atendimento',
-      descricao: 'Métricas de tempo médio de resolução',
-      icon: ClockIcon,
-      cor: 'orange'
-    }
-  ];
-
-  if (!isOpen) return null;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <ArrowPathIcon className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
-          <h2 className="text-xl font-bold text-gray-800">Relatórios</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <XMarkIcon className="w-6 h-6" />
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Relatórios</h1>
+          <p className="text-gray-600">Análise completa do sistema</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleExportar('pdf')}
+            disabled={exportando}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            <DocumentArrowDownIcon className="w-5 h-5" />
+            PDF
+          </button>
+          <button
+            onClick={() => handleExportar('excel')}
+            disabled={exportando}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            <DocumentArrowDownIcon className="w-5 h-5" />
+            Excel
+          </button>
+          <button
+            onClick={() => handleExportar('csv')}
+            disabled={exportando}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <DocumentArrowDownIcon className="w-5 h-5" />
+            CSV
           </button>
         </div>
+      </div>
 
-        <div className="p-6">
-          {loading && (
-            <div className="flex items-center justify-center py-8">
-              <ArrowPathIcon className="w-8 h-8 text-blue-600 animate-spin" />
-            </div>
-          )}
-
-          {/* Seleção de tipo de relatório */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Tipo de Relatório</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {relatorios.map((rel) => {
-                const Icon = rel.icon;
-                return (
-                  <button
-                    key={rel.id}
-                    onClick={() => setTipoRelatorio(rel.id)}
-                    className={`p-4 border-2 rounded-lg text-left transition ${
-                      tipoRelatorio === rel.id
-                        ? `border-${rel.cor}-500 bg-${rel.cor}-50`
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Icon className={`w-6 h-6 text-${rel.cor}-600 mb-2`} />
-                    <h4 className="font-medium text-gray-800">{rel.nome}</h4>
-                    <p className="text-xs text-gray-500 mt-1">{rel.descricao}</p>
-                  </button>
-                );
-              })}
-            </div>
+      {/* Filtros */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <button
+          onClick={() => setShowFiltros(!showFiltros)}
+          className="w-full px-4 py-3 flex items-center justify-between text-gray-700 hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-2">
+            <FunnelIcon className="w-5 h-5" />
+            <span className="font-medium">Filtros</span>
           </div>
+          <ChevronDownIcon className={`w-5 h-5 transition-transform ${showFiltros ? 'rotate-180' : ''}`} />
+        </button>
 
-          {/* Seleção de período */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Período</h3>
-            <div className="space-y-3">
-              <select
-                value={periodo}
-                onChange={(e) => setPeriodo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="semana">Última semana</option>
-                <option value="mes">Último mês</option>
-                <option value="trimestre">Último trimestre</option>
-                <option value="ano">Último ano</option>
-                <option value="personalizado">Personalizado</option>
-              </select>
-              
+        {showFiltros && (
+          <div className="p-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Período</label>
+                <select
+                  value={periodo}
+                  onChange={(e) => setPeriodo(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="semana">Última semana</option>
+                  <option value="mes">Último mês</option>
+                  <option value="trimestre">Último trimestre</option>
+                  <option value="ano">Último ano</option>
+                  <option value="personalizado">Personalizado</option>
+                </select>
+              </div>
+
               {periodo === 'personalizado' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <input
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => setDataFim(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg"
-                  />
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Início</label>
+                    <input
+                      type="date"
+                      value={dataInicio}
+                      onChange={(e) => setDataInicio(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Fim</label>
+                    <input
+                      type="date"
+                      value={dataFim}
+                      onChange={(e) => setDataFim(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
+          <p className="text-sm opacity-90">Total de Chamados</p>
+          <p className="text-2xl font-bold">{stats.total}</p>
+          <p className="text-xs mt-2">No período selecionado</p>
+        </div>
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
+          <p className="text-sm opacity-90">Concluídos</p>
+          <p className="text-2xl font-bold">{stats.concluidos}</p>
+          <p className="text-xs mt-2">{((stats.concluidos / stats.total) * 100 || 0).toFixed(1)}% do total</p>
+        </div>
+        <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg p-4 text-white">
+          <p className="text-sm opacity-90">Tempo Médio</p>
+          <p className="text-2xl font-bold">{stats.tempoMedio}h</p>
+          <p className="text-xs mt-2">Para conclusão</p>
+        </div>
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-4 text-white">
+          <p className="text-sm opacity-90">Satisfação</p>
+          <p className="text-2xl font-bold">{stats.satisfacaoMedia}</p>
+          <p className="text-xs mt-2">Média de {stats.satisfacaoMedia}/5</p>
+        </div>
+      </div>
+
+      {/* Tabela de Chamados */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 bg-gray-50">
+          <h3 className="font-semibold text-gray-800">Detalhamento dos Chamados</h3>
+          <p className="text-sm text-gray-500 mt-1">Mostrando {chamadosFiltrados.length} chamados</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Título</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prioridade</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Técnico</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {chamadosFiltrados.slice(0, 10).map((chamado) => (
+                <tr key={chamado.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono text-gray-500">#{chamado.id?.slice(-6)}</td>
+                  <td className="px-4 py-3">
+                    <p className="text-sm font-medium text-gray-800">{chamado.titulo}</p>
+                    <p className="text-xs text-gray-500">{chamado.equipamento}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${
+                      chamado.status === 'aberto' ? 'bg-yellow-100 text-yellow-700' :
+                      chamado.status === 'em_andamento' ? 'bg-blue-100 text-blue-700' :
+                      chamado.status === 'concluido' ? 'bg-green-100 text-green-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {chamado.status === 'aberto' && 'Aberto'}
+                      {chamado.status === 'em_andamento' && 'Em Andamento'}
+                      {chamado.status === 'concluido' && 'Concluído'}
+                      {chamado.status === 'cancelado' && 'Cancelado'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${
+                      chamado.prioridade === 'alta' || chamado.prioridade === 'emergencial' ? 'bg-red-100 text-red-700' :
+                      chamado.prioridade === 'media' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {chamado.prioridade}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{chamado.tecnicoNome || '-'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">
+                    {chamado.dataCriacao?.toLocaleDateString('pt-BR')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Equipamentos mais problemáticos */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <h3 className="font-semibold text-gray-800 mb-4">Top Equipamentos com Problemas</h3>
+          <div className="space-y-3">
+            {stats.chamadosPorEquipamento.map((eq, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">{eq.nome}</span>
+                <div className="flex items-center gap-3">
+                  <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-600 rounded-full"
+                      style={{ width: `${(eq.quantidade / stats.total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">{eq.quantidade}</span>
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
+        </div>
 
-          {/* Opções de formato */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Formato de Exportação</h3>
-            <div className="flex gap-4">
-              <label className="flex items-center">
-                <input 
-                  type="radio" 
-                  name="formato" 
-                  value="pdf" 
-                  checked={formato === 'pdf'}
-                  onChange={(e) => setFormato(e.target.value)}
-                  className="mr-2" 
-                />
-                PDF
-              </label>
-              <label className="flex items-center">
-                <input 
-                  type="radio" 
-                  name="formato" 
-                  value="csv" 
-                  checked={formato === 'csv'}
-                  onChange={(e) => setFormato(e.target.value)}
-                  className="mr-2" 
-                />
-                CSV
-              </label>
-              <label className="flex items-center">
-                <input 
-                  type="radio" 
-                  name="formato" 
-                  value="json" 
-                  checked={formato === 'json'}
-                  onChange={(e) => setFormato(e.target.value)}
-                  className="mr-2" 
-                />
-                JSON
-              </label>
-            </div>
-          </div>
-
-          {/* Botões de ação */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              disabled={loading}
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleGerarRelatorio}
-              disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                  Gerando...
-                </>
-              ) : (
-                <>
-                  <DocumentArrowDownIcon className="w-5 h-5" />
-                  Gerar Relatório
-                </>
-              )}
-            </button>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+          <h3 className="font-semibold text-gray-800 mb-4">Top Técnicos</h3>
+          <div className="space-y-3">
+            {stats.chamadosPorTecnico.map((tec, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">{tec.nome}</span>
+                <div className="flex items-center gap-3">
+                  <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-green-600 rounded-full"
+                      style={{ width: `${(tec.quantidade / stats.total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">{tec.quantidade}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

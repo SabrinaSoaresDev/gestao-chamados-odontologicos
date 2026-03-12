@@ -268,7 +268,7 @@ export default function Layout({ children }) {
         {/* Sidebar */}
         <aside className={`
           lg:block lg:static lg:transform-none
-          fixed inset-y-0 left-0 z-20 bg-gray-900 shadow-xl min-h-screen border-r border-gray-700
+          fixed top-16 bottom-0 left-0 overflow-y-auto z-20 bg-gray-900 shadow-xl min-h-screen border-r border-gray-700
           transform transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-56'}
@@ -315,10 +315,10 @@ export default function Layout({ children }) {
           />
         )}
 
-        {/* Main Content */}
+        {/* Main Content - CORRIGIDO */}
         <main className={`
           flex-1 p-6 min-w-0 transition-all duration-300 bg-white
-          ${sidebarCollapsed}
+          ${sidebarCollapsed }
         `}>
           <div className="max-w-7xl mx-auto">
             {children}
