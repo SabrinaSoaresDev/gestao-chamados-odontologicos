@@ -464,7 +464,7 @@ export default function GerenciarUsuarios() {
 
       {/* Modal de Cadastro/Edição */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <h3 className="text-lg font-bold text-gray-800">
@@ -620,7 +620,7 @@ export default function GerenciarUsuarios() {
 
       {/* Modal de Detalhes */}
       {showDetalhesModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-800">Detalhes do Usuário</h3>
