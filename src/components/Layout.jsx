@@ -14,7 +14,8 @@ import {
   ChartBarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  WrenchScrewdriverIcon
+  WrenchScrewdriverIcon,
+  BuildingOfficeIcon
 } from '@heroicons/react/24/outline';
 import { db } from '../services/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -135,6 +136,13 @@ export default function Layout({ children }) {
         path: '/admin/relatorios',
         roles: ['admin']
       },
+      {
+  id: 'patrimonio',
+  name: 'Patrimônio',
+  icon: BuildingOfficeIcon, // ou o ícone que preferir
+  path: '/admin/patrimonio',
+  roles: ['admin']
+},
       {
         id: 'configuracoes',
         name: 'Configurações',

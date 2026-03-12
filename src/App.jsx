@@ -13,6 +13,7 @@ import AdminChamados from './pages/Admin/Chamados';
 import AdminConfiguracoes from './pages/Admin/Configuracoes';
 import Relatorios from './pages/Admin/Relatorios';
 import AdminUsuarios from './pages/Admin/Usuarios';
+import Patrimonio from './pages/Admin/Patrimonio';
 
 // Páginas do Dentista
 import DentistaDashboard from './pages/Dentistas/Dashboard';
@@ -62,6 +63,14 @@ function AppRoutes() {
           </Layout>
         </PrivateRoute>
       } />
+
+      <Route path="/admin/patrimonio" element={
+          <PrivateRoute allowedRoles={['admin']}>
+            <Layout currentPage="patrimonio">
+              <Patrimonio />
+            </Layout>
+          </PrivateRoute>
+        } />
       <Route path="/admin/configuracoes" element={
         <PrivateRoute allowedRoles={['admin']}>
           <Layout currentPage="configuracoes">
