@@ -40,12 +40,11 @@ import {
   KeyIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
 
 export default function GerenciarUsuarios() {
   const { userData } = useAuth();
-  const navigate = useNavigate();
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -94,9 +93,6 @@ export default function GerenciarUsuarios() {
   });
   
   const [alterandoSenha, setAlterandoSenha] = useState(false);
-  
-  // Estado para guardar as credenciais do admin
-  const [adminCredentials, setAdminCredentials] = useState(null);
 
   // Opções de roles
   const roles = [
@@ -160,17 +156,6 @@ export default function GerenciarUsuarios() {
 
   const strengthInfo = getPasswordStrengthText();
 
-  // Guardar credenciais do admin quando ele estiver logado
-  useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (currentUser && !adminCredentials) {
-      setAdminCredentials({
-        email: currentUser.email,
-        uid: currentUser.uid
-      });
-    }
-  }, []);
-
   // Carregar usuários em tempo real
   useEffect(() => {
     console.log('🔄 Iniciando listener de usuários...');
@@ -197,20 +182,29 @@ export default function GerenciarUsuarios() {
     return () => unsubscribe();
   }, []);
 
-  const handleSubmit = async (e) => {
+
+const handleSubmit = async (e) => {
   e.preventDefault();
   
   console.log('🚀 Iniciando handleSubmit...');
+  console.log('👤 Admin atual:', auth.currentUser?.email);
   
-  // Guardar o admin atual ANTES de qualquer operação
-  const adminUser = auth.currentUser;
-  console.log('👤 Admin atual:', adminUser?.email, adminUser?.uid);
-  
+  // Validar senhas
+  if (formData.password !== formData.confirmPassword) {
+    toast.error('As senhas não conferem');
+    return;
+  }
+
+  if (passwordStrength.score < 2) {
+    toast.error('Escolha uma senha mais forte');
+    return;
+  }
+
   setLoading(true);
 
   try {
     if (editingUser) {
-      // Editar usuário existente
+      // Editar usuário existente (continua igual)
       await updateDoc(doc(db, 'usuarios', editingUser.id), {
         nome: formData.nome,
         role: formData.role,
@@ -223,29 +217,17 @@ export default function GerenciarUsuarios() {
       });
       
       toast.success('Usuário atualizado com sucesso!');
+      setShowModal(false);
+      resetForm();
       
     } else {
       console.log('🆕 Criando novo usuário...');
-      
-      // Validar senhas
-      if (formData.password !== formData.confirmPassword) {
-        toast.error('As senhas não conferem');
-        setLoading(false);
-        return;
-      }
 
-      if (passwordStrength.score < 2) {
-        toast.error('Escolha uma senha mais forte');
-        setLoading(false);
-        return;
-      }
-
-      // PRIMEIRO: Criar no Firestore usando o admin atual
-      // Gerar um UID temporário ou usar email como ID
+      // 1. Criar documento TEMPORÁRIO no Firestore (como admin)
       const tempUid = `temp_${Date.now()}`;
       
       const userData = {
-        uid: tempUid, // Temporário, será atualizado depois
+        uid: tempUid,
         nome: formData.nome,
         email: formData.email,
         role: formData.role,
@@ -255,20 +237,16 @@ export default function GerenciarUsuarios() {
         especialidade: formData.especialidade || '',
         observacoes: formData.observacoes || '',
         dataCriacao: new Date(),
-        criadoPor: adminUser?.uid,
-        status: 'pendente', // Marcar como pendente
+        criadoPor: auth.currentUser?.uid,
+        status: 'pendente',
         ultimoAcesso: null
       };
 
-      console.log('📝 Criando documento temporário no Firestore:', userData);
-      
-      // Criar documento temporário
-      const tempDocRef = doc(db, 'usuarios', tempUid);
-      await setDoc(tempDocRef, userData);
-      
+      console.log('📝 Criando documento temporário:', userData);
+      await setDoc(doc(db, 'usuarios', tempUid), userData);
       console.log('✅ Documento temporário criado');
 
-      // SEGUNDO: Criar no Authentication
+      // 2. Criar no Authentication (ISSO VAI DESLOGAR O ADMIN)
       console.log('📧 Criando usuário no Auth:', formData.email);
       const userCredential = await createUserWithEmailAndPassword(
         auth, 
@@ -279,40 +257,58 @@ export default function GerenciarUsuarios() {
       const novoUsuario = userCredential.user;
       console.log('✅ Usuário criado no Auth. UID:', novoUsuario.uid);
 
-      // TERCEIRO: Atualizar o documento com o UID real
-      console.log('🔄 Atualizando documento com UID real...');
+      // 3. LOGIN NOVAMENTE como admin (vamos precisar da senha)
+      const adminEmail = auth.currentUser?.email; // Isso agora é o email do NOVO usuário
+      const adminOriginal = prompt("Digite o EMAIL do administrador para voltar:");
       
-      // Copiar os dados do documento temporário para o definitivo
+      if (!adminOriginal) {
+        toast.error('Operação cancelada');
+        setLoading(false);
+        return;
+      }
+
+      const adminSenha = prompt("Digite a SENHA do administrador:");
+      if (!adminSenha) {
+        toast.error('Operação cancelada');
+        setLoading(false);
+        return;
+      }
+
+      // Fazer login novamente como admin
+      await signInWithEmailAndPassword(auth, adminOriginal, adminSenha);
+      console.log('✅ Admin logado novamente');
+
+      // 4. Agora sim, criar o documento DEFINITIVO (como admin)
       await setDoc(doc(db, 'usuarios', novoUsuario.uid), {
         ...userData,
         uid: novoUsuario.uid,
         status: 'ativo',
-        dataCriacao: new Date() // Manter a data original? Ou atualizar?
+        dataCriacao: new Date()
       });
+
+      // 5. Remover o documento temporário
+      await deleteDoc(doc(db, 'usuarios', tempUid));
       
-      // Remover o documento temporário
-      await deleteDoc(tempDocRef);
+      console.log('✅ Usuário criado com sucesso!');
+      toast.success('Usuário criado com sucesso!');
       
-      console.log('✅ Documento definitivo criado no Firestore!');
-      toast.success('Usuário criado com sucesso no Authentication e Firestore!');
+      setShowModal(false);
+      resetForm();
     }
 
-    setShowModal(false);
-    resetForm();
-    
   } catch (error) {
-    console.error('❌ ERRO DETALHADO:', error);
+    console.error('❌ ERRO:', error);
     
-    if (error.code === 'permission-denied') {
-      toast.error('Permissão negada. Verifique as regras do Firestore.');
-    } else if (error.code === 'auth/email-already-in-use') {
+    if (error.code === 'auth/email-already-in-use') {
       toast.error('Este e-mail já está cadastrado');
     } else if (error.code === 'auth/weak-password') {
       toast.error('Senha muito fraca');
     } else if (error.code === 'auth/invalid-email') {
       toast.error('E-mail inválido');
+    } else if (error.code === 'auth/wrong-password') {
+      toast.error('Senha do administrador incorreta');
     } else {
-      toast.error('Erro ao salvar usuário: ' + error.message);
+      toast.error('Erro ao criar usuário: ' + error.message);
     }
   } finally {
     setLoading(false);
@@ -352,19 +348,40 @@ export default function GerenciarUsuarios() {
     }
   };
 
-  const handleDelete = async (userId) => {
-    if (!window.confirm('Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.')) {
-      return;
-    }
+  const handleDelete = async (userId, userEmail) => {
+  if (!window.confirm(`Tem certeza que deseja excluir ${userEmail}?`)) {
+    return;
+  }
 
-    try {
-      await deleteDoc(doc(db, 'usuarios', userId));
-      toast.success('Usuário excluído com sucesso!');
-    } catch (error) {
-      console.error('Erro ao excluir usuário:', error);
-      toast.error('Erro ao excluir usuário');
-    }
-  };
+  try {
+    // Excluir do Firestore (sempre funciona)
+    await deleteDoc(doc(db, 'usuarios', userId));
+    
+    // Para exclusão do Auth, dar instruções
+    toast.success(
+      <div>
+        <p>✅ Usuário removido do Firestore!</p>
+        <p className="text-xs mt-2">
+          Para remover também do Authentication, acesse:
+          <br />
+          <a 
+            href="https://console.firebase.google.com/project/gestao-chamados-odontologicos/authentication/users" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-blue-600 underline"
+          >
+            Console do Firebase → Authentication
+          </a>
+        </p>
+      </div>,
+      { duration: 8000 }
+    );
+
+  } catch (error) {
+    console.error('Erro:', error);
+    toast.error('Erro ao excluir usuário');
+  }
+};
 
   const handleToggleAtivo = async (user) => {
     try {
