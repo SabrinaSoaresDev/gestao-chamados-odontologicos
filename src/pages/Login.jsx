@@ -5,6 +5,7 @@ import { db } from '../services/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import { UserIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import logo from '../assets/logo.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -58,7 +59,7 @@ export default function Login() {
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-8">
           <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <UserIcon className="w-10 h-10 text-blue-600" />
+            <img src={logo} alt="logo" />
           </div>
           <h2 className="text-3xl font-bold text-gray-800">Ortodonsist</h2>
           <p className="text-gray-500 mt-2">Sistema de Gestão de Chamados</p>
