@@ -1,15 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/firebase';
-import { 
-  collection, 
-  query, 
-  where, 
+import {
+  collection,
+  query,
+  where,
   onSnapshot,
   updateDoc,
   doc,
   orderBy
 } from 'firebase/firestore';
-import { 
+import {
   MagnifyingGlassIcon,
   FunnelIcon,
   XMarkIcon,
@@ -27,7 +28,9 @@ import {
   WrenchScrewdriverIcon,
   PhoneIcon,
   MapPinIcon,
-  PlusCircleIcon
+  PlusCircleIcon,
+  FilmIcon,
+  PlayIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,12 +43,16 @@ export default function TecnicoChamados() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroPrioridade, setFiltroPrioridade] = useState('todos');
+  
+  // Modais
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [showFinalizarModal, setShowFinalizarModal] = useState(false);
+  
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [atualizacao, setAtualizacao] = useState('');
   const [fotosServico, setFotosServico] = useState([]);
   const [uploading, setUploading] = useState(false);
+  
   const [finalizacao, setFinalizacao] = useState({
     descricao: '',
     pecasTrocadas: '',
@@ -53,16 +60,16 @@ export default function TecnicoChamados() {
     observacoes: ''
   });
 
+  // Estado para controlar a imagem ampliada (Lightbox)
+  const [imagemAmpliada, setImagemAmpliada] = useState(null);
+
   useEffect(() => {
     if (!userData) return;
-
-    // Carregar chamados atribuídos ao técnico
     const q = query(
       collection(db, 'chamados'),
       where('tecnicoId', '==', userData.uid),
       orderBy('dataCriacao', 'desc')
     );
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const chamadosData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -76,9 +83,15 @@ export default function TecnicoChamados() {
       toast.error('Erro ao carregar seus chamados');
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [userData]);
+
+  // Debug do estado da imagem
+  useEffect(() => {
+    if (imagemAmpliada) {
+      console.log('🖼️ Imagem ampliada aberta');
+    }
+  }, [imagemAmpliada]);
 
   // Função para converter imagem para Base64
   const convertToBase64 = (file) => {
@@ -99,18 +112,14 @@ export default function TecnicoChamados() {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-
         if (width > maxWidth) {
           height = (maxWidth * height) / width;
           width = maxWidth;
         }
-
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        
-        // Comprimir para JPEG com qualidade 0.7
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
         resolve(compressedBase64);
       };
@@ -119,14 +128,10 @@ export default function TecnicoChamados() {
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
-    
-    // Limitar a 5 fotos
-    if (files.length > 5) {
+    if (files.length + fotosServico.length > 5) {
       toast.error('Máximo de 5 fotos por serviço');
       return;
     }
-
-    // Validar tipos de arquivo
     const validFiles = files.filter(file => {
       const isValid = file.type.startsWith('image/');
       if (!isValid) {
@@ -134,16 +139,13 @@ export default function TecnicoChamados() {
       }
       return isValid;
     });
-
-    // Validar tamanho (máx 500KB)
     const validSizeFiles = validFiles.filter(file => {
-      const isValid = file.size <= 500 * 1024; // 500KB
+      const isValid = file.size <= 500 * 1024;
       if (!isValid) {
         toast.error(`${file.name} é muito grande (máx 500KB)`);
       }
       return isValid;
     });
-
     setFotosServico(prev => [...prev, ...validSizeFiles]);
   };
 
@@ -155,7 +157,6 @@ export default function TecnicoChamados() {
     try {
       const chamadoRef = doc(db, 'chamados', chamadoId);
       const chamado = chamados.find(c => c.id === chamadoId);
-      
       await updateDoc(chamadoRef, {
         status: newStatus,
         ...(newStatus === 'em_andamento' && { dataInicio: new Date() }),
@@ -169,8 +170,11 @@ export default function TecnicoChamados() {
           }
         ]
       });
-
       toast.success('Status atualizado!');
+      // Atualiza o estado local para refletir imediatamente na UI
+      if (selectedChamado && selectedChamado.id === chamadoId) {
+        setSelectedChamado({ ...selectedChamado, status: newStatus });
+      }
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast.error('Erro ao atualizar status');
@@ -182,11 +186,9 @@ export default function TecnicoChamados() {
       toast.error('Digite uma atualização');
       return;
     }
-
     try {
       const chamadoRef = doc(db, 'chamados', chamadoId);
       const chamado = chamados.find(c => c.id === chamadoId);
-      
       await updateDoc(chamadoRef, {
         historico: [
           ...(chamado?.historico || []),
@@ -198,9 +200,18 @@ export default function TecnicoChamados() {
           }
         ]
       });
-
       setAtualizacao('');
       toast.success('Atualização adicionada!');
+      
+      // Atualiza o selecionado localmente
+      if (selectedChamado && selectedChamado.id === chamadoId) {
+         const novoHistorico = [
+            ...(selectedChamado?.historico || []),
+            { data: new Date(), acao: atualizacao, usuario: userData.nome, tipo: 'comentario' }
+         ];
+         setSelectedChamado({ ...selectedChamado, historico: novoHistorico });
+      }
+
     } catch (error) {
       console.error('Erro ao adicionar atualização:', error);
       toast.error('Erro ao adicionar atualização');
@@ -209,38 +220,25 @@ export default function TecnicoChamados() {
 
   const handleFinalizarChamado = async () => {
     if (!selectedChamado) return;
-
     if (!finalizacao.descricao.trim()) {
       toast.error('Descreva o serviço realizado');
       return;
     }
-
     setUploading(true);
     toast.loading('Processando informações...', { id: 'finalizar' });
-
     try {
       let fotosServicoUrls = [];
-      
-      // Processar fotos do serviço
       if (fotosServico.length > 0) {
         for (let i = 0; i < fotosServico.length; i++) {
           const foto = fotosServico[i];
-          
-          // Converter para Base64
           let base64 = await convertToBase64(foto);
-          
-          // Redimensionar se necessário
           if (base64.length > 300 * 1024) {
             base64 = await resizeImage(base64, 600);
           }
-          
           fotosServicoUrls.push(base64);
         }
       }
-
       const chamadoRef = doc(db, 'chamados', selectedChamado.id);
-      
-      // Atualizar o chamado com todas as informações
       await updateDoc(chamadoRef, {
         status: 'concluido',
         dataConclusao: new Date(),
@@ -249,7 +247,7 @@ export default function TecnicoChamados() {
           pecasTrocadas: finalizacao.pecasTrocadas,
           tempoGasto: finalizacao.tempoGasto,
           observacoes: finalizacao.observacoes,
-          fotos: fotosServicoUrls, // Fotos do serviço realizado
+          fotos: fotosServicoUrls,
           finalizadoPor: userData.nome,
           data: new Date()
         },
@@ -263,10 +261,7 @@ export default function TecnicoChamados() {
           }
         ]
       });
-
       toast.success('Chamado finalizado com sucesso!', { id: 'finalizar' });
-      
-      // Reset dos estados
       setShowFinalizarModal(false);
       setFinalizacao({
         descricao: '',
@@ -276,7 +271,7 @@ export default function TecnicoChamados() {
       });
       setFotosServico([]);
       setSelectedChamado(null);
-      
+      setShowDetalhesModal(false);
     } catch (error) {
       console.error('Erro ao finalizar chamado:', error);
       toast.error('Erro ao finalizar chamado', { id: 'finalizar' });
@@ -286,19 +281,16 @@ export default function TecnicoChamados() {
   };
 
   const filteredChamados = chamados.filter(chamado => {
-    const matchesSearch = 
+    const matchesSearch =
       chamado.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.equipamento?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.solicitanteNome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.id?.toLowerCase().includes(searchTerm.toLowerCase());
-    
     const matchesStatus = filtroStatus === 'todos' || chamado.status === filtroStatus;
     const matchesPrioridade = filtroPrioridade === 'todos' || chamado.prioridade === filtroPrioridade;
-    
     return matchesSearch && matchesStatus && matchesPrioridade;
   });
 
-  // Estatísticas
   const stats = {
     total: chamados.length,
     abertos: chamados.filter(c => c.status === 'aberto').length,
@@ -369,6 +361,65 @@ export default function TecnicoChamados() {
       </div>
     );
   }
+
+  // Adicione este componente DENTRO do seu componente TecnicoChamados (antes do return)
+const MediaViewer = ({ src, type }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!isOpen) {
+    return (
+      <div 
+        className="relative group cursor-pointer"
+        onClick={() => setIsOpen(true)}
+      >
+        {type === 'foto' ? (
+          <img
+            src={src}
+            alt="Mídia do chamado"
+            className="w-full h-24 object-cover rounded-lg"
+          />
+        ) : (
+          <div className="w-full h-24 bg-gray-800 rounded-lg flex items-center justify-center relative">
+            <FilmIcon className="w-8 h-8 text-white opacity-80" />
+            <PlayIcon className="w-4 h-4 text-white absolute bottom-1 right-1" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+          <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]"
+      onClick={() => setIsOpen(false)}
+    >
+      <button
+        onClick={() => setIsOpen(false)}
+        className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+      >
+        <XMarkIcon className="w-8 h-8" />
+      </button>
+      
+      {type === 'foto' ? (
+        <img
+          src={src}
+          alt="Mídia ampliada"
+          className="max-w-full max-h-full object-contain"
+        />
+      ) : (
+        <video
+          src={src}
+          controls
+          className="max-w-full max-h-full"
+          autoPlay
+        />
+      )}
+    </div>
+  );
+};
 
   return (
     <div className="space-y-6">
@@ -480,8 +531,6 @@ export default function TecnicoChamados() {
                     <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
                     <p className="text-sm text-gray-600">{chamado.equipamento}</p>
                   </div>
-                  
-                  {/* Botões de ação rápida */}
                   {chamado.status === 'aberto' && (
                     <button
                       onClick={(e) => {
@@ -494,7 +543,6 @@ export default function TecnicoChamados() {
                       Iniciar
                     </button>
                   )}
-                  
                   {chamado.status === 'em_andamento' && (
                     <button
                       onClick={(e) => {
@@ -509,21 +557,16 @@ export default function TecnicoChamados() {
                     </button>
                   )}
                 </div>
-
-                {/* Informações do Solicitante */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
                   <div className="flex items-center text-gray-600">
                     <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
                     <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
                   </div>
-                  
                   <div className="flex items-center text-gray-600">
                     <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
                     <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
                   </div>
                 </div>
-
-                {/* Última atualização */}
                 {chamado.historico && chamado.historico.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-sm text-gray-500">
@@ -540,7 +583,7 @@ export default function TecnicoChamados() {
 
       {/* Modal Detalhes do Chamado */}
       {showDetalhesModal && selectedChamado && (
-        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <div>
@@ -554,7 +597,6 @@ export default function TecnicoChamados() {
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
-
             <div className="p-6 space-y-6">
               {/* Status e Prioridade */}
               <div className="flex flex-wrap gap-4">
@@ -565,7 +607,6 @@ export default function TecnicoChamados() {
                       {getStatusIcon(selectedChamado.status)}
                       {getStatusText(selectedChamado.status)}
                     </span>
-                    
                     {selectedChamado.status === 'aberto' && (
                       <button
                         onClick={() => {
@@ -577,7 +618,6 @@ export default function TecnicoChamados() {
                         Iniciar Atendimento
                       </button>
                     )}
-                    
                     {selectedChamado.status === 'em_andamento' && (
                       <button
                         onClick={() => {
@@ -613,7 +653,6 @@ export default function TecnicoChamados() {
                     )}
                   </div>
                 </div>
-
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Solicitante</h3>
                   <div className="bg-gray-50 p-4 rounded-lg space-y-2">
@@ -630,69 +669,88 @@ export default function TecnicoChamados() {
                 </div>
               </div>
 
-              {/* Fotos do Problema */}
-              {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
-                <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Fotos do Problema</h3>
-                  <div className="grid grid-cols-4 gap-4">
-                    {selectedChamado.fotos.map((foto, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={foto}
-                          alt={`Foto ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg cursor-pointer"
-                          onClick={() => window.open(foto, '_blank')}
-                        />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-                          <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {/* Fotos do Problema */}
+{selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
+  <div>
+    <h3 className="font-medium text-gray-700 mb-2">Fotos do Problema</h3>
+    <div className="grid grid-cols-4 gap-4">
+      {selectedChamado.fotos.map((foto, index) => {
+        const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
+        const imageSrc = isBase64 ? foto : foto;
+        
+        return (
+          <MediaViewer 
+            key={index} 
+            src={imageSrc} 
+            type="foto" 
+          />
+        );
+      })}
+    </div>
+  </div>
+)}
 
+{/* Vídeos do Problema */}
+{selectedChamado.videos && selectedChamado.videos.length > 0 && (
+  <div>
+    <h3 className="font-medium text-gray-700 mb-2">Vídeos do Problema</h3>
+    <div className="grid grid-cols-4 gap-4">
+      {selectedChamado.videos.map((video, index) => {
+        const videoSrc = typeof video === 'object' && video.data ? video.data : video;
+        return (
+          <MediaViewer 
+            key={index} 
+            src={videoSrc} 
+            type="video" 
+          />
+        );
+      })}
+    </div>
+  </div>
+)}
               {/* Serviço Realizado (se concluído) */}
               {selectedChamado.servicoRealizado && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Serviço Realizado</h3>
                   <div className="bg-green-50 p-4 rounded-lg space-y-3">
                     <p><span className="font-medium">Descrição:</span> {selectedChamado.servicoRealizado.descricao}</p>
-                    
                     {selectedChamado.servicoRealizado.pecasTrocadas && (
                       <p><span className="font-medium">Peças trocadas:</span> {selectedChamado.servicoRealizado.pecasTrocadas}</p>
                     )}
-                    
                     {selectedChamado.servicoRealizado.tempoGasto && (
                       <p><span className="font-medium">Tempo gasto:</span> {selectedChamado.servicoRealizado.tempoGasto}</p>
                     )}
-                    
                     {selectedChamado.servicoRealizado.observacoes && (
                       <p><span className="font-medium">Observações:</span> {selectedChamado.servicoRealizado.observacoes}</p>
                     )}
-
                     {/* Fotos do Serviço Realizado */}
                     {selectedChamado.servicoRealizado.fotos && selectedChamado.servicoRealizado.fotos.length > 0 && (
                       <div className="mt-3">
                         <p className="font-medium mb-2">Fotos do Serviço:</p>
                         <div className="grid grid-cols-4 gap-4">
-                          {selectedChamado.servicoRealizado.fotos.map((foto, index) => (
-                            <div key={index} className="relative group">
-                              <img
-                                src={foto}
-                                alt={`Foto serviço ${index + 1}`}
-                                className="w-full h-24 object-cover rounded-lg cursor-pointer"
-                                onClick={() => window.open(foto, '_blank')}
-                              />
-                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-                                <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+                          {selectedChamado.servicoRealizado.fotos.map((foto, index) => {
+                            const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
+                            const imageSrc = isBase64 ? foto : foto;
+                            return (
+                              <div key={index} className="relative group">
+                                <img
+                                  src={imageSrc}
+                                  alt={`Foto serviço ${index + 1}`}
+                                  className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-90 transition"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setImagemAmpliada(imageSrc);
+                                  }}
+                                />
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+                                  <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
-                    
                     <p className="text-xs text-gray-500 mt-2">
                       Finalizado por {selectedChamado.servicoRealizado.finalizadoPor} em {formatDate(selectedChamado.dataConclusao)}
                     </p>
@@ -784,7 +842,7 @@ export default function TecnicoChamados() {
 
       {/* Modal de Finalização */}
       {showFinalizarModal && selectedChamado && (
-        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-40">
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-xl font-bold text-gray-800">Finalizar Chamado</h2>
@@ -804,12 +862,10 @@ export default function TecnicoChamados() {
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
-
             <div className="p-6 space-y-4">
               <p className="text-sm text-gray-600 mb-4">
                 Registre as informações do serviço realizado para o chamado: <strong>{selectedChamado.titulo}</strong>
               </p>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Descrição do Serviço Realizado *
@@ -823,7 +879,6 @@ export default function TecnicoChamados() {
                   placeholder="Descreva detalhadamente o serviço realizado..."
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Peças Trocadas (se houver)
@@ -836,7 +891,6 @@ export default function TecnicoChamados() {
                   placeholder="Ex: Filtro, resistência, motor..."
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Tempo Gasto
@@ -849,7 +903,6 @@ export default function TecnicoChamados() {
                   placeholder="Ex: 2 horas e 30 minutos"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Observações Adicionais
@@ -862,7 +915,6 @@ export default function TecnicoChamados() {
                   placeholder="Observações relevantes sobre o serviço..."
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Fotos do Serviço Realizado (opcional - máximo 5)
@@ -890,7 +942,6 @@ export default function TecnicoChamados() {
                     </span>
                   </label>
                 </div>
-                
                 {fotosServico.length > 0 && (
                   <div className="mt-4">
                     <p className="text-sm text-gray-600 mb-2">
@@ -921,14 +972,12 @@ export default function TecnicoChamados() {
                   </div>
                 )}
               </div>
-
               {uploading && (
                 <div className="flex items-center justify-center gap-2 text-blue-600">
                   <ArrowPathIcon className="w-5 h-5 animate-spin" />
                   <span>Processando informações...</span>
                 </div>
               )}
-
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => {
@@ -962,6 +1011,33 @@ export default function TecnicoChamados() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Imagem Ampliada (CORRIGIDO) */}
+      {imagemAmpliada && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/95 transition-opacity duration-300"
+          style={{ zIndex: 9999 }} // Garante que fique acima de tudo
+          onClick={() => setImagemAmpliada(null)}
+        >
+          <div
+            className="relative max-w-[95vw] max-h-[95vh] flex items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()} // Impede fechar ao clicar na imagem
+          >
+            <img
+              src={imagemAmpliada}
+              alt="Imagem ampliada"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            />
+            <button
+              onClick={() => setImagemAmpliada(null)}
+              className="absolute top-4 right-4 bg-red-500 text-white rounded-full p-3 hover:bg-red-600 transition shadow-lg"
+              title="Fechar"
+            >
+              <XMarkIcon className="w-6 h-6" />
+            </button>
           </div>
         </div>
       )}

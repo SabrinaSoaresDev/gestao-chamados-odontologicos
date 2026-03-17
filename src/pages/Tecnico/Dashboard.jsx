@@ -28,7 +28,10 @@ import {
   PhoneIcon,
   MapPinIcon,
   ChevronDownIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  FilmIcon,
+  PlayIcon,
+  EyeIcon  // <-- ADICIONAR EYEICON (estava faltando)
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
@@ -249,6 +252,65 @@ export default function TecnicoDashboard() {
     });
   };
 
+  // MediaViewer component - DEFINIDO ANTES DO RETURN
+  const MediaViewer = ({ src, type }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    if (!isOpen) {
+      return (
+        <div 
+          className="relative group cursor-pointer"
+          onClick={() => setIsOpen(true)}
+        >
+          {type === 'foto' ? (
+            <img
+              src={src}
+              alt="Mídia do chamado"
+              className="w-full h-24 object-cover rounded-lg"
+            />
+          ) : (
+            <div className="w-full h-24 bg-gray-800 rounded-lg flex items-center justify-center relative">
+              <FilmIcon className="w-8 h-8 text-white opacity-80" />
+              <PlayIcon className="w-4 h-4 text-white absolute bottom-1 right-1" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+            <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]"
+        onClick={() => setIsOpen(false)}
+      >
+        <button
+          onClick={() => setIsOpen(false)}
+          className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+        >
+          <XMarkIcon className="w-8 h-8" />
+        </button>
+        
+        {type === 'foto' ? (
+          <img
+            src={src}
+            alt="Mídia ampliada"
+            className="max-w-full max-h-full object-contain"
+          />
+        ) : (
+          <video
+            src={src}
+            controls
+            className="max-w-full max-h-full"
+            autoPlay
+          />
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -423,7 +485,7 @@ export default function TecnicoDashboard() {
 
       {/* Modal de Detalhes */}
       {showDetailsModal && selectedChamado && (
-        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <div>
@@ -520,16 +582,38 @@ export default function TecnicoDashboard() {
               {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Fotos do Problema</h3>
-                  <div className="grid grid-cols-4 gap-2">
-                    {selectedChamado.fotos.map((foto, index) => (
-                      <img
-                        key={index}
-                        src={foto}
-                        alt={`Foto ${index + 1}`}
-                        className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-75"
-                        onClick={() => window.open(foto, '_blank')}
-                      />
-                    ))}
+                  <div className="grid grid-cols-4 gap-4">
+                    {selectedChamado.fotos.map((foto, index) => {
+                      const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
+                      const imageSrc = isBase64 ? foto : foto;
+                      
+                      return (
+                        <MediaViewer 
+                          key={index} 
+                          src={imageSrc} 
+                          type="foto" 
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Vídeos do Problema */}
+              {selectedChamado.videos && selectedChamado.videos.length > 0 && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Vídeos do Problema</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    {selectedChamado.videos.map((video, index) => {
+                      const videoSrc = typeof video === 'object' && video.data ? video.data : video;
+                      return (
+                        <MediaViewer 
+                          key={index} 
+                          src={videoSrc} 
+                          type="video" 
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -642,7 +726,7 @@ export default function TecnicoDashboard() {
 
       {/* Modal de Finalização */}
       {showFinalizarModal && selectedChamado && (
-        <div className="fixed inset-0  modal-overlay flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800">Finalizar Chamado</h2>
