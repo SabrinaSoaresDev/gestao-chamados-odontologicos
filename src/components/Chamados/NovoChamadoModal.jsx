@@ -6,7 +6,8 @@ import {
   PhotoIcon, 
   ArrowPathIcon,
   FilmIcon,
-  PlayIcon 
+  PlayIcon,
+  BuildingOfficeIcon // Ícone para unidade
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -15,12 +16,13 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
     titulo: '',
     equipamento: '',
     descricao: '',
-    prioridade: 'media'
+    prioridade: 'media',
+    unidade: '' // <-- CAMPO DE TEXTO SIMPLES
   });
   const [fotos, setFotos] = useState([]);
   const [videos, setVideos] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [midiaType, setMidiaType] = useState('foto'); // 'foto' ou 'video'
+  const [midiaType, setMidiaType] = useState('foto');
 
   // Função para validar arquivos
   const validarArquivo = (file) => {
@@ -32,13 +34,12 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
       return false;
     }
 
-    // Limites diferentes para fotos e vídeos
-    if (isFoto && file.size > 500 * 1024) { // 500KB para fotos
+    if (isFoto && file.size > 500 * 1024) {
       toast.error(`${file.name} é muito grande (máx 500KB)`);
       return false;
     }
     
-    if (isVideo && file.size > 5 * 1024 * 1024) { // 5MB para vídeos
+    if (isVideo && file.size > 5 * 1024 * 1024) {
       toast.error(`${file.name} é muito grande (máx 5MB)`);
       return false;
     }
@@ -49,7 +50,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
     
-    // Limitar número total de arquivos
     const totalArquivos = fotos.length + videos.length + files.length;
     if (totalArquivos > 5) {
       toast.error('Máximo de 5 arquivos por chamado');
@@ -63,14 +63,12 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
       if (!validarArquivo(file)) return;
 
       if (file.type.startsWith('image/')) {
-        // Verificar limite de fotos (máx 3)
         if (fotos.length + novasFotos.length >= 3) {
           toast.error('Máximo de 3 fotos por chamado');
           return;
         }
         novasFotos.push(file);
       } else if (file.type.startsWith('video/')) {
-        // Verificar limite de vídeos (máx 2)
         if (videos.length + novosVideos.length >= 2) {
           toast.error('Máximo de 2 vídeos por chamado');
           return;
@@ -91,7 +89,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
     }
   };
 
-  // Função para converter arquivo para Base64
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -101,7 +98,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
     });
   };
 
-  // Função para redimensionar imagem
   const resizeImage = (base64Str, maxWidth = 800) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -145,13 +141,18 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
       return;
     }
 
+    // Unidade é opcional, não precisa validar
+    // if (!formData.unidade.trim()) {
+    //   toast.error('Unidade de atendimento é obrigatória');
+    //   return;
+    // }
+
     setUploading(true);
 
     try {
       let fotosBase64 = [];
       let videosBase64 = [];
       
-      // Processar fotos
       if (fotos.length > 0) {
         toast.loading('Processando imagens...', { id: 'process' });
         
@@ -167,7 +168,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
         }
       }
 
-      // Processar vídeos
       if (videos.length > 0) {
         toast.loading('Processando vídeos...', { id: 'process-videos' });
         
@@ -175,7 +175,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
           const video = videos[i];
           const base64 = await convertToBase64(video);
           
-          // Vídeos não são redimensionados, apenas convertidos
           videosBase64.push({
             data: base64,
             nome: video.name,
@@ -185,7 +184,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
         }
       }
 
-      // Calcular tamanho total
       const totalSizeFotos = fotosBase64.reduce((acc, base64) => acc + base64.length, 0);
       const totalSizeVideos = videosBase64.reduce((acc, v) => acc + v.data.length, 0);
       const totalSizeMB = ((totalSizeFotos + totalSizeVideos) * 0.75) / (1024 * 1024);
@@ -194,7 +192,7 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
         toast.warning('O total de arquivos está próximo do limite do Firestore (1MB)');
       }
 
-      // Salvar chamado no Firestore
+      // Salvar chamado no Firestore com a unidade
       const chamadoData = {
         ...formData,
         solicitanteId,
@@ -205,7 +203,7 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
         dataCriacao: new Date(),
         historico: [{
           data: new Date(),
-          acao: `Chamado criado com ${fotos.length} foto(s) e ${videos.length} vídeo(s)`,
+          acao: `Chamado criado ${formData.unidade ? `para unidade ${formData.unidade}` : ''} com ${fotos.length} foto(s) e ${videos.length} vídeo(s)`,
           usuario: solicitanteNome,
           tipo: 'criacao'
         }],
@@ -220,12 +218,12 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
       
       toast.success('Chamado criado com sucesso!');
       
-      // Reset form
       setFormData({
         titulo: '',
         equipamento: '',
         descricao: '',
-        prioridade: 'media'
+        prioridade: 'media',
+        unidade: ''
       });
       setFotos([]);
       setVideos([]);
@@ -293,6 +291,24 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
             />
           </div>
 
+          {/* NOVO CAMPO: Unidade de Atendimento (campo de texto simples) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <div className="flex items-center gap-2">
+                <BuildingOfficeIcon className="w-4 h-4" />
+                Unidade de Atendimento (opcional)
+              </div>
+            </label>
+            <input
+              type="text"
+              value={formData.unidade}
+              onChange={(e) => setFormData({...formData, unidade: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Digite o nome da unidade (ex: UBS Centro)"
+              disabled={uploading}
+            />
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Descrição do Problema *
@@ -331,7 +347,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
               Fotos e Vídeos (opcional)
             </label>
             
-            {/* Tabs para selecionar tipo */}
             <div className="flex gap-2 mb-3">
               <button
                 type="button"
@@ -359,7 +374,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
               </button>
             </div>
 
-            {/* Área de upload */}
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
               <input
                 type="file"
@@ -459,7 +473,6 @@ export default function NovoChamadoModal({ isOpen, onClose, solicitanteId, solic
               </div>
             )}
 
-            {/* Informações de tamanho total */}
             {(fotos.length > 0 || videos.length > 0) && (
               <div className="mt-2 text-xs text-gray-500">
                 Tamanho total aproximado: {
