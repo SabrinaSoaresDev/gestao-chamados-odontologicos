@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { db } from '../services/firebase';
 import { doc, setDoc } from 'firebase/firestore';
@@ -140,15 +139,15 @@ export default function Register() {
     return true;
   };
 
-  async function handleSubmit(e) {
+ async function handleSubmit(e) {
   e.preventDefault();
-  
+
   if (!validateForm()) return;
-  
+
   setLoading(true);
 
   try {
-    // 1. Criar usuário no Firebase Authentication
+    // 🔹 1. Criar usuário no Firebase Auth
     const userCredential = await createUserWithEmailAndPassword(
       auth,
       formData.email,
@@ -157,7 +156,10 @@ export default function Register() {
 
     const user = userCredential.user;
 
-    // 2. Criar perfil do usuário no Firestore
+    // 🔥 GARANTE TOKEN VÁLIDO (ESSENCIAL)
+    await user.getIdToken(true);
+
+    // 🔹 2. Criar dados do usuário
     const userData = {
       uid: user.uid,
       nome: formData.nome,
@@ -174,36 +176,25 @@ export default function Register() {
       dataTermos: new Date()
     };
 
-    // Aguardar um pouco para o Firebase Auth processar
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Tentar criar o documento com retry
-    let retries = 3;
-    while (retries > 0) {
-      try {
-        await setDoc(doc(db, 'usuarios', user.uid), userData);
-        break;
-      } catch (err) {
-        retries--;
-        if (retries === 0) throw err;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
+    // 🔹 3. Salvar no Firestore (sem retry)
+    await setDoc(doc(db, 'usuarios', user.uid), userData);
 
     toast.success('Cadastro realizado com sucesso!');
     setTimeout(() => navigate('/login'), 2000);
 
   } catch (error) {
     console.error('Erro no cadastro:', error);
-    
-    // Se falhou, deletar o usuário do Auth para manter consistência
-    try {
-      await auth.currentUser?.delete();
-    } catch (deleteError) {
-      console.error('Erro ao limpar usuário:', deleteError);
+
+    // 🔥 DELETE SEGURO
+    if (auth.currentUser) {
+      try {
+        await auth.currentUser.delete();
+      } catch (e) {
+        console.log('Erro ao remover usuário:', e);
+      }
     }
-    
-    // Tratamento de erros...
+
+    // 🔹 Tratamento de erros
     if (error.code === 'auth/email-already-in-use') {
       toast.error('Este e-mail já está cadastrado');
     } else if (error.code === 'auth/weak-password') {
@@ -211,6 +202,7 @@ export default function Register() {
     } else {
       toast.error('Erro ao realizar cadastro. Tente novamente.');
     }
+
   } finally {
     setLoading(false);
   }
