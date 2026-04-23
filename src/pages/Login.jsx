@@ -15,44 +15,53 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setLoading(true);
+ async function handleSubmit(e) {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const userCredential = await login(email, password);
-      const user = userCredential.user;
+  try {
+    const userCredential = await login(email, password);
+    const user = userCredential.user;
+    
+    // Buscar dados do usuário no Firestore
+    const docRef = doc(db, 'usuarios', user.uid);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      const userData = docSnap.data();
       
-      // Buscar dados do usuário no Firestore
-      const docRef = doc(db, 'usuarios', user.uid);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        const userData = docSnap.data();
-        
-        // Redirecionar baseado no papel do usuário
-        switch(userData.role) {
-          case 'admin':
-            navigate('/admin');
-            break;
-          case 'dentista':
-            navigate('/dentista');
-            break;
-          case 'tecnico':
-            navigate('/tecnico');
-            break;
-          default:
-            navigate('/login');
-        }
-        
-        toast.success('Login realizado com sucesso!');
+      // VERIFICAR SE É PRIMEIRO ACESSO
+      if (userData.primeiroAcesso === true) {
+        // Redirecionar para página de redefinição de senha
+        navigate('/primeiro-acesso', { state: { email: user.email } });
+        toast.info('Por segurança, crie uma nova senha para seu primeiro acesso');
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      toast.error('Erro ao fazer login. Verifique suas credenciais.');
-    } finally {
-      setLoading(false);
+      
+      // Redirecionar baseado no papel do usuário
+      switch(userData.role) {
+  case 'admin':
+    navigate('/admin');  // ✅ Vai para o dashboard admin
+    break;
+  case 'dentista':
+    navigate('/dentista'); // ✅ Vai para o dashboard dentista
+    break;
+  case 'tecnico':
+    navigate('/tecnico');  // ✅ Vai para o dashboard técnico
+    break;
+  default:
+    navigate('/admin');
+}
+      
+      toast.success('Login realizado com sucesso!');
     }
+  } catch (error) {
+    toast.error('Erro ao fazer login. Verifique suas credenciais.');
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">

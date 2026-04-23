@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast';
 // Páginas de Login
 import Login from './pages/Login';
 import Register from './pages/Register';
+import FirstAccessReset from './components/FirstAccessReset';
 
 // Páginas do Admin
 import AdminDashboard from './pages/Admin/Dashboard';
@@ -49,6 +50,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/primeiro-acesso" element={<FirstAccessReset />} />
       
       {/* Rotas do Admin */}
       <Route path="/admin" element={

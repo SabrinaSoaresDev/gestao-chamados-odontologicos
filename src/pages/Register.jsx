@@ -16,7 +16,10 @@ import {
   EyeIcon,
   EyeSlashIcon,
   CheckCircleIcon,
-  XCircleIcon
+  XCircleIcon,
+  ShieldCheckIcon,
+  WrenchScrewdriverIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 
 export default function Register() {
@@ -24,7 +27,7 @@ export default function Register() {
     nome: '',
     email: '',
     telefone: '',
-    registroProfissional: '', // CRO para dentistas
+    registroProfissional: '',
     especialidade: '',
     password: '',
     confirmPassword: '',
@@ -45,6 +48,31 @@ export default function Register() {
   });
 
   const navigate = useNavigate();
+
+  // Opções de perfil com seus respectivos ícones e descrições
+  const rolesOptions = [
+    {
+      value: 'admin',
+      label: 'Administrador',
+      icon: ShieldCheckIcon,
+      description: 'Acesso total ao sistema, gestão de usuários e relatórios',
+      color: 'purple'
+    },
+    {
+      value: 'dentista',
+      label: 'Dentista',
+      icon: UserGroupIcon,
+      description: 'Abertura e acompanhamento de chamados, histórico de equipamentos',
+      color: 'blue'
+    },
+    {
+      value: 'tecnico',
+      label: 'Técnico',
+      icon: WrenchScrewdriverIcon,
+      description: 'Atendimento de chamados, registro de manutenções',
+      color: 'green'
+    }
+  ];
 
   // Especialidades para dentistas
   const especialidades = [
@@ -71,7 +99,6 @@ export default function Register() {
       hasSpecial: /[!@#$%^&*(),.?":{}|<>]/.test(password)
     };
 
-    // Calcular score
     let score = 0;
     if (strength.hasMinLength) score++;
     if (strength.hasNumber) score++;
@@ -136,79 +163,103 @@ export default function Register() {
       return false;
     }
 
+    // Validações específicas por perfil
+    if (formData.role === 'dentista' && !formData.registroProfissional) {
+      toast.error('Registro profissional (CRO) é obrigatório para dentistas');
+      return false;
+    }
+
+    if (formData.role === 'dentista' && !formData.especialidade) {
+      toast.error('Especialidade é obrigatória para dentistas');
+      return false;
+    }
+
+    if (formData.role === 'tecnico' && !formData.especialidade) {
+      toast.error('Área de atuação é obrigatória para técnicos');
+      return false;
+    }
+
     return true;
   };
 
- async function handleSubmit(e) {
-  e.preventDefault();
+  async function handleSubmit(e) {
+    e.preventDefault();
 
-  if (!validateForm()) return;
+    if (!validateForm()) return;
 
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    // 🔹 1. Criar usuário no Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(
-      auth,
-      formData.email,
-      formData.password
-    );
+    try {
+      // Criar usuário no Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
 
-    const user = userCredential.user;
+      const user = userCredential.user;
 
-    // 🔥 GARANTE TOKEN VÁLIDO (ESSENCIAL)
-    await user.getIdToken(true);
+      // Garantir token válido
+      await user.getIdToken(true);
 
-    // 🔹 2. Criar dados do usuário
-    const userData = {
-      uid: user.uid,
-      nome: formData.nome,
-      email: formData.email,
-      telefone: formData.telefone || '',
-      registroProfissional: formData.registroProfissional || '',
-      especialidade: formData.especialidade || '',
-      role: formData.role,
-      ativo: true,
-      dataCriacao: new Date(),
-      ultimoAcesso: new Date(),
-      criadoPor: 'auto-cadastro',
-      termosAceitos: aceiteTermos,
-      dataTermos: new Date()
-    };
+      // Criar dados do usuário com campo primeiroAcesso e role selecionada
+      const userData = {
+        uid: user.uid,
+        nome: formData.nome,
+        email: formData.email,
+        telefone: formData.telefone || '',
+        registroProfissional: formData.role === 'dentista' ? formData.registroProfissional : '',
+        especialidade: (formData.role === 'dentista' || formData.role === 'tecnico') ? formData.especialidade : '',
+        role: formData.role, // Perfil selecionado pelo usuário
+        ativo: true,
+        primeiroAcesso: true,
+        dataCriacao: new Date(),
+        ultimoAcesso: new Date(),
+        criadoPor: 'auto-cadastro',
+        termosAceitos: aceiteTermos,
+        dataTermos: new Date()
+      };
 
-    // 🔹 3. Salvar no Firestore (sem retry)
-    await setDoc(doc(db, 'usuarios', user.uid), userData);
+      // Salvar no Firestore
+      await setDoc(doc(db, 'usuarios', user.uid), userData);
 
-    toast.success('Cadastro realizado com sucesso!');
-    setTimeout(() => navigate('/login'), 2000);
+      // Mensagem personalizada baseada no perfil
+      const roleMessages = {
+        admin: 'conta de administrador',
+        dentista: 'conta de dentista',
+        tecnico: 'conta de técnico'
+      };
 
-  } catch (error) {
-    console.error('Erro no cadastro:', error);
+      toast.success(`Cadastro realizado com sucesso! ${roleMessages[formData.role]} criada. Faça seu primeiro login.`);
+      setTimeout(() => navigate('/login'), 2000);
 
-    // 🔥 DELETE SEGURO
-    if (auth.currentUser) {
-      try {
-        await auth.currentUser.delete();
-      } catch (e) {
-        console.log('Erro ao remover usuário:', e);
+    } catch (error) {
+      console.error('Erro no cadastro:', error);
+
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.delete();
+        } catch (e) {
+          console.log('Erro ao remover usuário:', e);
+        }
       }
-    }
 
-    // 🔹 Tratamento de erros
-    if (error.code === 'auth/email-already-in-use') {
-      toast.error('Este e-mail já está cadastrado');
-    } else if (error.code === 'auth/weak-password') {
-      toast.error('Senha muito fraca');
-    } else {
-      toast.error('Erro ao realizar cadastro. Tente novamente.');
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('Este e-mail já está cadastrado');
+      } else if (error.code === 'auth/weak-password') {
+        toast.error('Senha muito fraca');
+      } else {
+        toast.error('Erro ao realizar cadastro. Tente novamente.');
+      }
+    } finally {
+      setLoading(false);
     }
-
-  } finally {
-    setLoading(false);
   }
-}
 
   const strengthInfo = getPasswordStrengthText();
+
+  // Obter informações do perfil selecionado
+  const selectedRole = rolesOptions.find(role => role.value === formData.role);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -231,6 +282,51 @@ export default function Register() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Seletor de Perfil */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Tipo de Perfil *
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {rolesOptions.map((role) => {
+                const Icon = role.icon;
+                const isSelected = formData.role === role.value;
+                const colorClasses = {
+                  purple: isSelected ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-200',
+                  blue: isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200',
+                  green: isSelected ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-200'
+                };
+                
+                return (
+                  <button
+                    key={role.value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, role: role.value }))}
+                    className={`p-4 border-2 rounded-xl text-left transition-all ${colorClasses[role.color]} ${
+                      isSelected ? 'ring-2 ring-offset-2 ring-' + role.color + '-500' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`p-2 rounded-lg ${
+                        isSelected ? `bg-${role.color}-100` : 'bg-gray-100'
+                      }`}>
+                        <Icon className={`w-6 h-6 ${
+                          isSelected ? `text-${role.color}-600` : 'text-gray-500'
+                        }`} />
+                      </div>
+                      <span className={`font-semibold ${
+                        isSelected ? `text-${role.color}-700` : 'text-gray-700'
+                      }`}>
+                        {role.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">{role.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Nome Completo */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -287,44 +383,84 @@ export default function Register() {
             </div>
           </div>
 
-          {/* Registro Profissional (CRO) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Registro Profissional (CRO)
-            </label>
-            <div className="relative">
-              <IdentificationIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                name="registroProfissional"
-                value={formData.registroProfissional}
-                onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                placeholder="Ex: CRO-SP 12345"
-              />
-            </div>
-          </div>
+          {/* Campos específicos para Dentista */}
+          {formData.role === 'dentista' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Registro Profissional (CRO) *
+                </label>
+                <div className="relative">
+                  <IdentificationIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="registroProfissional"
+                    required
+                    value={formData.registroProfissional}
+                    onChange={handleInputChange}
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                    placeholder="Ex: CRO-SP 12345"
+                  />
+                </div>
+              </div>
 
-          {/* Especialidade */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Especialidade
-            </label>
-            <div className="relative">
-              <BuildingOfficeIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <select
-                name="especialidade"
-                value={formData.especialidade}
-                onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition appearance-none"
-              >
-                <option value="">Selecione uma especialidade</option>
-                {especialidades.map(esp => (
-                  <option key={esp} value={esp}>{esp}</option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Especialidade *
+                </label>
+                <div className="relative">
+                  <BuildingOfficeIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <select
+                    name="especialidade"
+                    required
+                    value={formData.especialidade}
+                    onChange={handleInputChange}
+                    className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition appearance-none"
+                  >
+                    <option value="">Selecione uma especialidade</option>
+                    {especialidades.map(esp => (
+                      <option key={esp} value={esp}>{esp}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Campos específicos para Técnico */}
+          {formData.role === 'tecnico' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Área de Atuação *
+              </label>
+              <div className="relative">
+                <WrenchScrewdriverIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <select
+                  name="especialidade"
+                  required
+                  value={formData.especialidade}
+                  onChange={handleInputChange}
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition appearance-none"
+                >
+                  <option value="">Selecione sua área</option>
+                  <option value="Manutenção Básica">Manutenção básica</option>
+                  <option value="Manutenção Detalhada">Manutenção detalhada</option>
+                  <option value="Manutenção Preventiva">Manutenção preventiva</option>
+                  <option value="Suporte Geral">Suporte geral</option>
+                </select>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Campos específicos para Admin */}
+          {formData.role === 'admin' && (
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <p className="text-sm text-purple-800 flex items-center gap-2">
+                <ShieldCheckIcon className="w-5 h-5" />
+                Você está criando uma conta de administrador. Será necessário aprovação de outro administrador.
+              </p>
+            </div>
+          )}
 
           {/* Senha */}
           <div>
@@ -498,7 +634,7 @@ export default function Register() {
                 Cadastrando...
               </>
             ) : (
-              'Criar Conta'
+              `Criar Conta de ${selectedRole?.label}`
             )}
           </button>
 
