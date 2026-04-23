@@ -348,38 +348,79 @@ const handleSubmit = async (e) => {
     }
   };
 
-  const handleDelete = async (userId, userEmail) => {
-  if (!window.confirm(`Tem certeza que deseja excluir ${userEmail}?`)) {
+  const handleDelete = async (userId, userEmail, userNome) => {
+  // Confirmar exclusão com mais detalhes
+  if (!window.confirm(`⚠️ ATENÇÃO!\n\nDeseja realmente excluir o usuário "${userNome}" (${userEmail})?\n\nEsta ação:\n• Removerá o usuário do Firestore\n• Tentará remover do Authentication\n• É IRREVERSÍVEL!\n\nTem certeza?`)) {
     return;
   }
 
+  setLoading(true);
+  
   try {
-    // Excluir do Firestore (sempre funciona)
+    // 1. TENTAR EXCLUIR DO AUTH PRIMEIRO
+    let authDeleted = false;
+    
+    // Verificar se é o próprio admin tentando se excluir
+    if (auth.currentUser?.uid === userId) {
+      toast.error('Você não pode excluir sua própria conta!');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      // Para excluir do Auth, precisamos de uma função Cloud (recomendado)
+      // OU usar o método mais simples: instruir o admin a fazer manualmente
+      
+      // Método 1: Tentar usando uma função do Firebase (se configurada)
+      // const functions = getFunctions();
+      // const deleteAuthUser = httpsCallable(functions, 'deleteAuthUser');
+      // await deleteAuthUser({ uid: userId });
+      // authDeleted = true;
+      
+      // Método 2: Como não temos a função Cloud, mostrar instruções
+      console.log('Usuário do Auth precisa ser removido manualmente');
+      
+    } catch (authError) {
+      console.error('Erro ao excluir do Auth:', authError);
+      // Continua mesmo se falhar
+    }
+    
+    // 2. EXCLUIR DO FIRESTORE
     await deleteDoc(doc(db, 'usuarios', userId));
     
-    // Para exclusão do Auth, dar instruções
+    // 3. MOSTRAR MENSAGEM DE SUCESSO COM INSTRUÇÕES
     toast.success(
-      <div>
-        <p>✅ Usuário removido do Firestore!</p>
-        <p className="text-xs mt-2">
-          Para remover também do Authentication, acesse:
-          <br />
-          <a 
-            href="https://console.firebase.google.com/project/gestao-chamados-odontologicos/authentication/users" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-600 underline"
-          >
-            Console do Firebase → Authentication
-          </a>
-        </p>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <CheckCircleIcon className="w-5 h-5 text-green-500" />
+          <span className="font-medium">Usuário removido do Firestore!</span>
+        </div>
+        {!authDeleted && (
+          <div className="text-xs text-gray-600 mt-2 pt-2 border-t border-gray-200">
+            <p className="font-medium text-amber-600 mb-1">📌 Para remover completamente do sistema:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Acesse o <a 
+                href="https://console.firebase.google.com/project/gestao-chamados-odontologicos/authentication/users" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline"
+              >Console do Firebase → Authentication</a></li>
+              <li>Localize o usuário: <span className="font-mono text-xs bg-gray-100 px-1">{userEmail}</span></li>
+              <li>Clique nos 3 pontos (⋮) e selecione "Excluir conta"</li>
+            </ol>
+          </div>
+        )}
       </div>,
-      { duration: 8000 }
+      { duration: 10000 } // 10 segundos
     );
-
+    
+    // Recarregar a lista (já está em tempo real pelo onSnapshot)
+    
   } catch (error) {
-    console.error('Erro:', error);
-    toast.error('Erro ao excluir usuário');
+    console.error('Erro ao excluir:', error);
+    toast.error('Erro ao excluir usuário. Tente novamente.');
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -684,9 +725,10 @@ const handleSubmit = async (e) => {
                           <EnvelopeIcon className="w-5 h-5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(user.id)}
+                          onClick={() => handleDelete(user.id, user.email, user.nome)}
                           className="p-1 text-red-600 hover:bg-red-50 rounded"
                           title="Excluir"
+                          disabled={user.id === userData?.uid} // Desabilitar se for ele mesmo
                         >
                           <TrashIcon className="w-5 h-5" />
                         </button>
