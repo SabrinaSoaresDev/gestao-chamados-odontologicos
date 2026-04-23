@@ -141,62 +141,80 @@ export default function Register() {
   };
 
   async function handleSubmit(e) {
-    e.preventDefault();
+  e.preventDefault();
+  
+  if (!validateForm()) return;
+  
+  setLoading(true);
+
+  try {
+    // 1. Criar usuário no Firebase Authentication
+    const userCredential = await createUserWithEmailAndPassword(
+      auth,
+      formData.email,
+      formData.password
+    );
+
+    const user = userCredential.user;
+
+    // 2. Criar perfil do usuário no Firestore
+    const userData = {
+      uid: user.uid,
+      nome: formData.nome,
+      email: formData.email,
+      telefone: formData.telefone || '',
+      registroProfissional: formData.registroProfissional || '',
+      especialidade: formData.especialidade || '',
+      role: formData.role,
+      ativo: true,
+      dataCriacao: new Date(),
+      ultimoAcesso: new Date(),
+      criadoPor: 'auto-cadastro',
+      termosAceitos: aceiteTermos,
+      dataTermos: new Date()
+    };
+
+    // Aguardar um pouco para o Firebase Auth processar
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    if (!validateForm()) return;
-    
-    setLoading(true);
-
-    try {
-      // 1. Criar usuário no Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-
-      const user = userCredential.user;
-
-      // 2. Criar perfil do usuário no Firestore
-      const userData = {
-        uid: user.uid,
-        nome: formData.nome,
-        email: formData.email,
-        telefone: formData.telefone || '',
-        registroProfissional: formData.registroProfissional || '',
-        especialidade: formData.especialidade || '',
-        role: formData.role,
-        ativo: true,
-        dataCriacao: new Date(),
-        ultimoAcesso: new Date(),
-        criadoPor: 'auto-cadastro',
-        termosAceitos: aceiteTermos,
-        dataTermos: new Date()
-      };
-
-      await setDoc(doc(db, 'usuarios', user.uid), userData);
-
-      toast.success('Cadastro realizado com sucesso! Faça login para continuar.');
-      
-      // Redirecionar para login após 2 segundos
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-
-    } catch (error) {
-      console.error('Erro no cadastro:', error);
-      
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('Este e-mail já está cadastrado');
-      } else if (error.code === 'auth/weak-password') {
-        toast.error('Senha muito fraca');
-      } else {
-        toast.error('Erro ao realizar cadastro. Tente novamente.');
+    // Tentar criar o documento com retry
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await setDoc(doc(db, 'usuarios', user.uid), userData);
+        break;
+      } catch (err) {
+        retries--;
+        if (retries === 0) throw err;
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    } finally {
-      setLoading(false);
     }
+
+    toast.success('Cadastro realizado com sucesso!');
+    setTimeout(() => navigate('/login'), 2000);
+
+  } catch (error) {
+    console.error('Erro no cadastro:', error);
+    
+    // Se falhou, deletar o usuário do Auth para manter consistência
+    try {
+      await auth.currentUser?.delete();
+    } catch (deleteError) {
+      console.error('Erro ao limpar usuário:', deleteError);
+    }
+    
+    // Tratamento de erros...
+    if (error.code === 'auth/email-already-in-use') {
+      toast.error('Este e-mail já está cadastrado');
+    } else if (error.code === 'auth/weak-password') {
+      toast.error('Senha muito fraca');
+    } else {
+      toast.error('Erro ao realizar cadastro. Tente novamente.');
+    }
+  } finally {
+    setLoading(false);
   }
+}
 
   const strengthInfo = getPasswordStrengthText();
 
