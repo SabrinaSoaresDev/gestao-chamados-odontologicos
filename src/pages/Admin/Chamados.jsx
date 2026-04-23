@@ -33,7 +33,8 @@ import {
   PrinterIcon,
   PlusIcon,
   FilmIcon,
-  PlayIcon
+  PlayIcon,
+  MapPinIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -49,6 +50,7 @@ export default function AdminChamados() {
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroPrioridade, setFiltroPrioridade] = useState('todos');
   const [filtroTecnico, setFiltroTecnico] = useState('todos');
+  const [filtroUnidade, setFiltroUnidade] = useState('todos'); // NOVO FILTRO
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -63,6 +65,7 @@ export default function AdminChamados() {
     inicio: '',
     fim: ''
   });
+  const [unidades, setUnidades] = useState([]); // NOVO: lista de unidades únicas
 
   // ========== COMPONENTE INTERNO MediaViewer ==========
   const MediaViewer = ({ src, type }) => {
@@ -134,6 +137,11 @@ export default function AdminChamados() {
         dataCriacao: doc.data().dataCriacao?.toDate()
       }));
       setChamados(chamadosData);
+      
+      // Extrair unidades únicas para o filtro
+      const unidadesUnicas = [...new Set(chamadosData.map(c => c.unidade).filter(Boolean))];
+      setUnidades(unidadesUnicas);
+      
       setLoading(false);
     }, (error) => {
       console.error('Erro ao carregar chamados:', error);
@@ -290,7 +298,7 @@ export default function AdminChamados() {
     );
   };
 
-  // Filtros
+  // Filtros (adicionado filtroUnidade)
   const filteredChamados = chamados.filter(chamado => {
     const matchesSearch = 
       chamado.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -301,12 +309,13 @@ export default function AdminChamados() {
     const matchesStatus = filtroStatus === 'todos' || chamado.status === filtroStatus;
     const matchesPrioridade = filtroPrioridade === 'todos' || chamado.prioridade === filtroPrioridade;
     const matchesTecnico = filtroTecnico === 'todos' || chamado.tecnicoId === filtroTecnico;
+    const matchesUnidade = filtroUnidade === 'todos' || chamado.unidade === filtroUnidade;
     
     const matchesDateRange = 
       (!dateRange.inicio || new Date(chamado.dataCriacao) >= new Date(dateRange.inicio)) &&
       (!dateRange.fim || new Date(chamado.dataCriacao) <= new Date(dateRange.fim));
     
-    return matchesSearch && matchesStatus && matchesPrioridade && matchesTecnico && matchesDateRange;
+    return matchesSearch && matchesStatus && matchesPrioridade && matchesTecnico && matchesUnidade && matchesDateRange;
   });
 
   // Estatísticas
@@ -360,11 +369,12 @@ export default function AdminChamados() {
   };
 
   const exportToCSV = () => {
-    const headers = ['ID', 'Título', 'Equipamento', 'Solicitante', 'Status', 'Prioridade', 'Técnico', 'Data Criação', 'Data Conclusão'];
+    const headers = ['ID', 'Título', 'Equipamento', 'Unidade', 'Solicitante', 'Status', 'Prioridade', 'Técnico', 'Data Criação', 'Data Conclusão'];
     const data = filteredChamados.map(c => [
       c.id.slice(-6),
       c.titulo,
       c.equipamento,
+      c.unidade || 'Não informada',
       c.solicitanteNome,
       c.status,
       c.prioridade,
@@ -512,7 +522,7 @@ export default function AdminChamados() {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <select
                 value={filtroStatus}
                 onChange={(e) => setFiltroStatus(e.target.value)}
@@ -537,6 +547,17 @@ export default function AdminChamados() {
               </select>
 
               <select
+                value={filtroUnidade}
+                onChange={(e) => setFiltroUnidade(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todos">Todas unidades</option>
+                {unidades.map(unidade => (
+                  <option key={unidade} value={unidade}>{unidade}</option>
+                ))}
+              </select>
+
+              <select
                 value={filtroTecnico}
                 onChange={(e) => setFiltroTecnico(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -554,6 +575,7 @@ export default function AdminChamados() {
                   setFiltroStatus('todos');
                   setFiltroPrioridade('todos');
                   setFiltroTecnico('todos');
+                  setFiltroUnidade('todos');
                   setDateRange({ inicio: '', fim: '' });
                 }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -608,6 +630,7 @@ export default function AdminChamados() {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Chamado</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unidade</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Solicitante</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prioridade</th>
@@ -633,6 +656,12 @@ export default function AdminChamados() {
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{chamado.titulo}</div>
                       <div className="text-xs text-gray-500">{chamado.equipamento}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1">
+                        <MapPinIcon className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-gray-900">{chamado.unidade || 'Não informada'}</span>
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center">
@@ -747,6 +776,13 @@ export default function AdminChamados() {
                 </div>
                 <h3 className="font-medium text-gray-800 mb-1">{chamado.titulo}</h3>
                 <p className="text-sm text-gray-500">{chamado.equipamento}</p>
+                {/* Unidade no card */}
+                <div className="flex items-center gap-1 mt-2">
+                  <MapPinIcon className="w-3 h-3 text-blue-500" />
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    {chamado.unidade || 'Unidade não informada'}
+                  </span>
+                </div>
               </div>
               
               <div className="p-4 space-y-3">
@@ -891,47 +927,59 @@ export default function AdminChamados() {
                 </div>
 
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Técnico Responsável</h3>
+                  <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    {selectedChamado.tecnicoNome ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <UserCircleIcon className="w-8 h-8 text-gray-400" />
-                          <div>
-                            <p className="font-medium">{selectedChamado.tecnicoNome}</p>
-                            <p className="text-xs text-gray-500">Técnico responsável</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleAtribuirTecnico(selectedChamado.id, null, null)}
-                          className="text-sm text-red-600 hover:text-red-800"
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    ) : (
-                      <select
-                        onChange={(e) => {
-                          const tecnico = tecnicos.find(t => t.id === e.target.value);
-                          if (tecnico) {
-                            handleAtribuirTecnico(selectedChamado.id, tecnico.id, tecnico.nome);
-                            setSelectedChamado({
-                              ...selectedChamado,
-                              tecnicoId: tecnico.id,
-                              tecnicoNome: tecnico.nome
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        value=""
-                      >
-                        <option value="" disabled>Selecionar técnico</option>
-                        {tecnicos.map(t => (
-                          <option key={t.id} value={t.id}>{t.nome}</option>
-                        ))}
-                      </select>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <MapPinIcon className="w-5 h-5 text-gray-400" />
+                      <p className="text-gray-700">
+                        {selectedChamado.unidade || 'Unidade não informada'}
+                      </p>
+                    </div>
                   </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Técnico Responsável</h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  {selectedChamado.tecnicoNome ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <UserCircleIcon className="w-8 h-8 text-gray-400" />
+                        <div>
+                          <p className="font-medium">{selectedChamado.tecnicoNome}</p>
+                          <p className="text-xs text-gray-500">Técnico responsável</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleAtribuirTecnico(selectedChamado.id, null, null)}
+                        className="text-sm text-red-600 hover:text-red-800"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      onChange={(e) => {
+                        const tecnico = tecnicos.find(t => t.id === e.target.value);
+                        if (tecnico) {
+                          handleAtribuirTecnico(selectedChamado.id, tecnico.id, tecnico.nome);
+                          setSelectedChamado({
+                            ...selectedChamado,
+                            tecnicoId: tecnico.id,
+                            tecnicoNome: tecnico.nome
+                          });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      value=""
+                    >
+                      <option value="" disabled>Selecionar técnico</option>
+                      {tecnicos.map(t => (
+                        <option key={t.id} value={t.id}>{t.nome}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -943,7 +991,7 @@ export default function AdminChamados() {
                 </div>
               </div>
 
-              {/* Fotos com MediaViewer */}
+              {/* Fotos e Vídeos */}
               {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Fotos Anexadas</h3>
@@ -963,7 +1011,6 @@ export default function AdminChamados() {
                 </div>
               )}
 
-              {/* Vídeos com MediaViewer */}
               {selectedChamado.videos && selectedChamado.videos.length > 0 && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Vídeos Anexados</h3>
@@ -978,6 +1025,43 @@ export default function AdminChamados() {
                         />
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Serviço Realizado */}
+              {selectedChamado.servicoRealizado && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Serviço Realizado</h3>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.servicoRealizado.descricao}</p>
+                    {selectedChamado.servicoRealizado.pecasTrocadas && (
+                      <p className="mt-2 text-sm"><span className="font-medium">Peças trocadas:</span> {selectedChamado.servicoRealizado.pecasTrocadas}</p>
+                    )}
+                    {selectedChamado.servicoRealizado.tempoGasto && (
+                      <p className="mt-1 text-sm"><span className="font-medium">Tempo gasto:</span> {selectedChamado.servicoRealizado.tempoGasto}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Avaliação */}
+              {selectedChamado.avaliacao && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Avaliação do Cliente</h3>
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-medium">Nota:</span>
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((nota) => (
+                          <span key={nota} className={`text-xl ${nota <= selectedChamado.avaliacao.nota ? 'text-yellow-400' : 'text-gray-300'}`}>★</span>
+                        ))}
+                      </div>
+                      <span className="text-sm text-gray-600">({selectedChamado.avaliacao.nota}/5)</span>
+                    </div>
+                    {selectedChamado.avaliacao.comentario && (
+                      <p className="text-gray-700">{selectedChamado.avaliacao.comentario}</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1061,6 +1145,7 @@ export default function AdminChamados() {
                 await updateDoc(chamadoRef, {
                   titulo: selectedChamado.titulo,
                   equipamento: selectedChamado.equipamento,
+                  unidade: selectedChamado.unidade,
                   descricao: selectedChamado.descricao,
                   prioridade: selectedChamado.prioridade,
                   historico: [
@@ -1108,6 +1193,22 @@ export default function AdminChamados() {
                     equipamento: e.target.value
                   })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Unidade
+                </label>
+                <input
+                  type="text"
+                  value={selectedChamado.unidade || ''}
+                  onChange={(e) => setSelectedChamado({
+                    ...selectedChamado,
+                    unidade: e.target.value
+                  })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Unidade do solicitante"
                 />
               </div>
 

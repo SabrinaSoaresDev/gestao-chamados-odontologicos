@@ -530,6 +530,10 @@ const MediaViewer = ({ src, type }) => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
                     <p className="text-sm text-gray-600">{chamado.equipamento}</p>
+                     <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 bg-blue-50 inline-flex px-2 py-0.5 rounded-full">
+                      <MapPinIcon className="w-3 h-3" />
+                      {chamado.unidade || 'Unidade não informada'}
+                    </div>
                   </div>
                   {chamado.status === 'aberto' && (
                     <button
@@ -557,16 +561,21 @@ const MediaViewer = ({ src, type }) => {
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
-                  <div className="flex items-center text-gray-600">
-                    <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
-                  </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
+                <div className="flex items-center text-gray-600">
+                  <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
+                  <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
                 </div>
+                <div className="flex items-center text-gray-600">
+                  <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
+                  <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
+                </div>
+                {/* ADICIONE ESTA LINHA PARA A UNIDADE */}
+                <div className="flex items-center text-gray-600">
+                  <MapPinIcon className="w-4 h-4 text-gray-400 mr-2" />
+                  <span className="font-medium mr-1">Unidade:</span> {chamado.unidade || 'Não informada'}
+                </div>
+              </div>
                 {chamado.historico && chamado.historico.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-sm text-gray-500">
@@ -583,91 +592,85 @@ const MediaViewer = ({ src, type }) => {
 
       {/* Modal Detalhes do Chamado */}
       {showDetalhesModal && selectedChamado && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
-              <div>
-                <h2 className="text-xl font-bold text-gray-800">Detalhes do Chamado</h2>
-                <p className="text-sm text-gray-500">#{selectedChamado.id.slice(-6)}</p>
-              </div>
-              <button
-                onClick={() => setShowDetalhesModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <XMarkIcon className="w-6 h-6" />
-              </button>
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Detalhes do Chamado</h2>
+          <p className="text-sm text-gray-500">#{selectedChamado.id.slice(-6)}</p>
+        </div>
+        <button
+          onClick={() => setShowDetalhesModal(false)}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <XMarkIcon className="w-6 h-6" />
+        </button>
+      </div>
+      
+      <div className="p-6 space-y-6">
+        {/* Status e Prioridade */}
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1">
+            <p className="text-sm text-gray-500 mb-1">Status</p>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getStatusColor(selectedChamado.status)}`}>
+                {getStatusIcon(selectedChamado.status)}
+                {getStatusText(selectedChamado.status)}
+              </span>
+              {/* Botões de ação... */}
             </div>
-            <div className="p-6 space-y-6">
-              {/* Status e Prioridade */}
-              <div className="flex flex-wrap gap-4">
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500 mb-1">Status</p>
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getStatusColor(selectedChamado.status)}`}>
-                      {getStatusIcon(selectedChamado.status)}
-                      {getStatusText(selectedChamado.status)}
-                    </span>
-                    {selectedChamado.status === 'aberto' && (
-                      <button
-                        onClick={() => {
-                          handleUpdateStatus(selectedChamado.id, 'em_andamento');
-                          setSelectedChamado({...selectedChamado, status: 'em_andamento'});
-                        }}
-                        className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                      >
-                        Iniciar Atendimento
-                      </button>
-                    )}
-                    {selectedChamado.status === 'em_andamento' && (
-                      <button
-                        onClick={() => {
-                          setShowDetalhesModal(false);
-                          setShowFinalizarModal(true);
-                        }}
-                        className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                      >
-                        Finalizar Chamado
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500 mb-1">Prioridade</p>
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getPrioridadeColor(selectedChamado.prioridade)}`}>
-                    {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
-                    {selectedChamado.prioridade}
-                  </span>
-                </div>
-              </div>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm text-gray-500 mb-1">Prioridade</p>
+            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getPrioridadeColor(selectedChamado.prioridade)}`}>
+              {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
+              {selectedChamado.prioridade}
+            </span>
+          </div>
+        </div>
 
-              {/* Informações do Chamado */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Informações</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <p><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
-                    <p><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
-                    <p><span className="text-gray-500">Data de abertura:</span> {formatDate(selectedChamado.dataCriacao)}</p>
-                    {selectedChamado.dataInicio && (
-                      <p><span className="text-gray-500">Início do atendimento:</span> {formatDate(selectedChamado.dataInicio)}</p>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Solicitante</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <p><span className="text-gray-500">Nome:</span> {selectedChamado.solicitanteNome}</p>
-                  </div>
-                </div>
-              </div>
+        {/* Informações do Chamado */}
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <h3 className="font-medium text-gray-700 mb-2">Informações</h3>
+            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+              <p><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
+              <p><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
+              <p><span className="text-gray-500">Data de abertura:</span> {formatDate(selectedChamado.dataCriacao)}</p>
+              {selectedChamado.dataInicio && (
+                <p><span className="text-gray-500">Início do atendimento:</span> {formatDate(selectedChamado.dataInicio)}</p>
+              )}
+            </div>
+          </div>
+          <div>
+            <h3 className="font-medium text-gray-700 mb-2">Solicitante</h3>
+            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+              <p><span className="text-gray-500">Nome:</span> {selectedChamado.solicitanteNome}</p>
+            </div>
+          </div>
+        </div>
 
-              {/* Descrição do Problema */}
-              <div>
-                <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.descricao}</p>
-                </div>
-              </div>
+        {/* UNIDADE - Corrigido e posicionado corretamente */}
+        <div>
+          <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex items-center gap-2">
+              <MapPinIcon className="w-5 h-5 text-gray-400" />
+              <p className="text-gray-700">
+                {selectedChamado.unidade || 'Unidade não informada'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Descrição do Problema */}
+        <div>
+          <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.descricao}</p>
+          </div>
+        </div>
+
 
             {/* Fotos do Problema */}
 {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (

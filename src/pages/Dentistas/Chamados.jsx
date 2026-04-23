@@ -9,7 +9,8 @@ import {
   addDoc,
   updateDoc,
   doc,
-  deleteDoc
+  deleteDoc,
+  getDoc
 } from 'firebase/firestore';
 import { 
   PlusIcon,
@@ -30,7 +31,9 @@ import {
   ChevronDownIcon,
   ExclamationTriangleIcon,
   WrenchScrewdriverIcon,
-  StarIcon
+  StarIcon,
+  MapPinIcon,
+  PlayIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
@@ -48,18 +51,46 @@ export default function DentistaChamados() {
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [showAvaliarModal, setShowAvaliarModal] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState(null);
+  const [unidadeUsuario, setUnidadeUsuario] = useState('');
+  
   const [formData, setFormData] = useState({
     titulo: '',
     equipamento: '',
+    unidade: '', // ← Será preenchido automaticamente
     descricao: '',
-    prioridade: 'media'
+    prioridade: 'media',
+    fotos: [],
+    videos: []
   });
+  
   const [fotos, setFotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [avaliacao, setAvaliacao] = useState({
     nota: 5,
     comentario: ''
   });
+
+  // Buscar a unidade do usuário no Firestore
+  useEffect(() => {
+    const buscarUnidadeUsuario = async () => {
+      if (userData?.uid) {
+        try {
+          const userRef = doc(db, 'usuarios', userData.uid);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const unidade = userDoc.data().unidade || '';
+            setUnidadeUsuario(unidade);
+            // Preencher automaticamente a unidade no formData
+            setFormData(prev => ({ ...prev, unidade: unidade }));
+          }
+        } catch (error) {
+          console.error('Erro ao buscar unidade do usuário:', error);
+        }
+      }
+    };
+    
+    buscarUnidadeUsuario();
+  }, [userData]);
 
   useEffect(() => {
     if (!userData) return;
@@ -102,9 +133,10 @@ export default function DentistaChamados() {
         fotosUrls.push(url);
       }
 
-      // Criar chamado
+      // Criar chamado com a unidade
       await addDoc(collection(db, 'chamados'), {
         ...formData,
+        unidade: unidadeUsuario, // ← Usando a unidade do usuário
         solicitanteId: userData.uid,
         solicitanteNome: userData.nome,
         status: 'aberto',
@@ -120,7 +152,13 @@ export default function DentistaChamados() {
 
       toast.success('Chamado criado com sucesso!');
       setShowNovoChamadoModal(false);
-      setFormData({ titulo: '', equipamento: '', descricao: '', prioridade: 'media' });
+      setFormData({ 
+        titulo: '', 
+        equipamento: '', 
+        unidade: unidadeUsuario, 
+        descricao: '', 
+        prioridade: 'media' 
+      });
       setFotos([]);
     } catch (error) {
       console.error('Erro ao criar chamado:', error);
@@ -280,6 +318,12 @@ export default function DentistaChamados() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Meus Chamados</h1>
           <p className="text-gray-600">Acompanhe e gerencie suas solicitações de manutenção</p>
+          {unidadeUsuario && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-flex">
+              <MapPinIcon className="w-4 h-4" />
+              Unidade: {unidadeUsuario}
+            </div>
+          )}
         </div>
         <button
           onClick={() => setShowNovoChamadoModal(true)}
@@ -381,6 +425,12 @@ export default function DentistaChamados() {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
                     <p className="text-sm text-gray-600">{chamado.equipamento}</p>
+                    {chamado.unidade && (
+                      <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
+                        <MapPinIcon className="w-3 h-3" />
+                        {chamado.unidade}
+                      </div>
+                    )}
                   </div>
                   
                   {/* Avaliação (se concluído) */}
@@ -453,6 +503,25 @@ export default function DentistaChamados() {
             </div>
 
             <form onSubmit={handleSubmitNovoChamado} className="p-6 space-y-4">
+              {/* Unidade (somente leitura) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Unidade *
+                </label>
+                <div className="relative">
+                  <MapPinIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={unidadeUsuario || 'Carregando...'}
+                    disabled
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 bg-gray-50 rounded-lg text-gray-600"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Unidade vinculada ao seu cadastro
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Título do Chamado *
@@ -639,19 +708,14 @@ export default function DentistaChamados() {
                 </div>
 
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Técnico Responsável</h3>
+                  <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    {selectedChamado.tecnicoNome ? (
-                      <div className="flex items-center gap-2">
-                        <UserCircleIcon className="w-8 h-8 text-gray-400" />
-                        <div>
-                          <p className="font-medium">{selectedChamado.tecnicoNome}</p>
-                          <p className="text-xs text-gray-500">Técnico responsável</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-gray-500">Aguardando atribuição</p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <MapPinIcon className="w-5 h-5 text-gray-400" />
+                      <p className="text-gray-700">
+                        {selectedChamado.unidade || 'Unidade não informada'}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -664,94 +728,59 @@ export default function DentistaChamados() {
                 </div>
               </div>
 
-                {/* Mídia Anexada (Fotos e Vídeos) */}
-                {(selectedChamado.fotos?.length > 0 || selectedChamado.videos?.length > 0) && (
-                  <div>
-                    <h3 className="font-medium text-gray-700 mb-2">Arquivos Anexados</h3>
-                    
-                    {/* Fotos */}
-                    {selectedChamado.fotos?.length > 0 && (
-                      <div className="mb-4">
-                        <p className="text-sm text-gray-500 mb-2">
-                          Fotos ({selectedChamado.fotos.length}):
-                        </p>
-                        <div className="grid grid-cols-4 gap-4">
-                          {selectedChamado.fotos.map((foto, index) => {
-                            const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
-                            const imageSrc = isBase64 ? foto : foto;
-                            
-                            return (
-                              <div key={index} className="relative group">
-                                <img
-                                  src={imageSrc}
-                                  alt={`Foto ${index + 1}`}
-                                  className="w-full h-24 object-cover rounded-lg cursor-pointer"
-                                  onClick={() => {
-                                    const modal = document.createElement('div');
-                                    modal.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]';
-                                    modal.onclick = () => modal.remove();
-                                    
-                                    const img = document.createElement('img');
-                                    img.src = imageSrc;
-                                    img.className = 'max-w-full max-h-full object-contain';
-                                    
-                                    modal.appendChild(img);
-                                    document.body.appendChild(modal);
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-                                  <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
-                                </div>
-                              </div>
-                            );
-                          })}
+              {/* Mídia Anexada (Fotos) */}
+              {selectedChamado.fotos?.length > 0 && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Fotos Anexadas</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    {selectedChamado.fotos.map((foto, index) => {
+                      const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
+                      const imageSrc = isBase64 ? foto : foto;
+                      
+                      return (
+                        <div key={index} className="relative group">
+                          <img
+                            src={imageSrc}
+                            alt={`Foto ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg cursor-pointer"
+                            onClick={() => {
+                              const modal = document.createElement('div');
+                              modal.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]';
+                              modal.onclick = () => modal.remove();
+                              
+                              const img = document.createElement('img');
+                              img.src = imageSrc;
+                              img.className = 'max-w-full max-h-full object-contain';
+                              
+                              modal.appendChild(img);
+                              document.body.appendChild(modal);
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+                            <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-                    {/* Vídeos */}
-                    {selectedChamado.videos?.length > 0 && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-2">
-                          Vídeos ({selectedChamado.videos.length}):
-                        </p>
-                        <div className="grid grid-cols-4 gap-4">
-                          {selectedChamado.videos.map((video, index) => {
-                            // Verificar se é Base64 ou URL
-                            const videoSrc = typeof video === 'object' && video.data ? video.data : video;
-                            
-                            return (
-                              <div key={index} className="relative group">
-                                <video
-                                  src={videoSrc}
-                                  className="w-full h-24 object-cover rounded-lg cursor-pointer"
-                                  onClick={() => {
-                                    const modal = document.createElement('div');
-                                    modal.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]';
-                                    modal.onclick = () => modal.remove();
-                                    
-                                    const videoEl = document.createElement('video');
-                                    videoEl.src = videoSrc;
-                                    videoEl.controls = true;
-                                    videoEl.className = 'max-w-full max-h-full';
-                                    videoEl.autoplay = true;
-                                    
-                                    modal.appendChild(videoEl);
-                                    document.body.appendChild(modal);
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-                                  <PlayIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+              {/* Serviço Realizado (se concluído) */}
+              {selectedChamado.servicoRealizado && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Serviço Realizado</h3>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.servicoRealizado.descricao}</p>
+                    {selectedChamado.servicoRealizado.pecasTrocadas && (
+                      <p className="mt-2 text-sm"><span className="font-medium">Peças trocadas:</span> {selectedChamado.servicoRealizado.pecasTrocadas}</p>
+                    )}
+                    {selectedChamado.servicoRealizado.tempoGasto && (
+                      <p className="mt-1 text-sm"><span className="font-medium">Tempo gasto:</span> {selectedChamado.servicoRealizado.tempoGasto}</p>
                     )}
                   </div>
-                )}
-
+                </div>
+              )}
 
               {/* Avaliação */}
               {selectedChamado.avaliacao && (
