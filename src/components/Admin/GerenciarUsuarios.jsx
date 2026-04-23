@@ -188,18 +188,6 @@ const handleSubmit = async (e) => {
   
   console.log('🚀 Iniciando handleSubmit...');
   console.log('👤 Admin atual:', auth.currentUser?.email);
-  
-  // Validar senhas
-  if (formData.password !== formData.confirmPassword) {
-    toast.error('As senhas não conferem');
-    return;
-  }
-
-  if (passwordStrength.score < 2) {
-    toast.error('Escolha uma senha mais forte');
-    return;
-  }
-
   setLoading(true);
 
   try {
@@ -476,8 +464,6 @@ const handleSubmit = async (e) => {
     setFormData({
       nome: user.nome || '',
       email: user.email || '',
-      password: '',
-      confirmPassword: '',
       role: user.role || 'dentista',
       ativo: user.ativo !== undefined ? user.ativo : true,
       telefone: user.telefone || '',
