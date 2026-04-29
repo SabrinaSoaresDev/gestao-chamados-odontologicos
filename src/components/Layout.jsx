@@ -5,7 +5,6 @@ import {
   HomeIcon, 
   ClipboardDocumentListIcon, 
   Cog6ToothIcon,
-  ArrowRightOnRectangleIcon,
   BellIcon,
   UserCircleIcon,
   UsersIcon,
@@ -19,11 +18,24 @@ import {
   CheckCircleIcon,
   ClockIcon,
   ExclamationTriangleIcon,
-  UserPlusIcon,
-  DocumentTextIcon
+  UserPlusIcon
 } from '@heroicons/react/24/outline';
 import { db } from '../services/firebase';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  orderBy, 
+  limit, 
+  updateDoc, 
+  doc,
+  writeBatch,
+  addDoc,
+  serverTimestamp,
+  getDocs
+} from 'firebase/firestore';
+import toast from 'react-hot-toast';
 
 export default function Layout({ children }) {
   const { userData, logout } = useAuth();
@@ -36,160 +48,249 @@ export default function Layout({ children }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Carregar notificações do Firebase
-  useEffect(() => {
-    if (!userData) return;
-
-    let unsubscribe;
-
-    if (userData.role === 'tecnico') {
-      // Técnico: novos chamados atribuídos
+  // Função para criar notificação no Firestore (com tratamento de erro)
+  const createNotification = async (userId, titulo, mensagem, tipo, link = null, chamadoId = null) => {
+    try {
+      // Verificar se já existe notificação similar nas últimas 24h
+      const ontem = new Date();
+      ontem.setDate(ontem.getDate() - 1);
+      
       const q = query(
-        collection(db, 'chamados'),
-        where('tecnicoId', '==', userData.uid),
-        where('status', '==', 'aberto'),
-        orderBy('dataCriacao', 'desc'),
-        limit(20)
+        collection(db, 'notificacoes'),
+        where('userId', '==', userId),
+        where('chamadoId', '==', chamadoId),
+        where('tipo', '==', tipo),
+        where('data', '>=', ontem)
       );
       
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const notificacoes = snapshot.docs.map(doc => ({
-          id: doc.id,
-          tipo: 'novo_chamado',
-          titulo: 'Novo chamado atribuído',
-          mensagem: doc.data().titulo,
-          data: doc.data().dataCriacao?.toDate(),
-          lida: false,
-          link: `/${userData.role}/chamados`,
-          icone: <ClipboardDocumentListIcon className="w-5 h-5 text-blue-400" />
-        }));
-        setNotifications(notificacoes);
-        setUnreadCount(notificacoes.length);
-      });
-
-    } else if (userData.role === 'admin') {
-      // Admin: chamados urgentes e novos usuários
-      const chamadosQuery = query(
-        collection(db, 'chamados'),
-        where('prioridade', 'in', ['alta', 'emergencial']),
-        where('status', 'in', ['aberto', 'em_andamento']),
-        orderBy('dataCriacao', 'desc'),
-        limit(10)
-      );
-
-      const usuariosQuery = query(
-        collection(db, 'usuarios'),
-        orderBy('dataCriacao', 'desc'),
-        limit(5)
-      );
-
-      const unsubscribeChamados = onSnapshot(chamadosQuery, (snapshot) => {
-        const chamadosNotif = snapshot.docs.map(doc => ({
-          id: `chamado-${doc.id}`,
-          tipo: 'chamado_urgente',
-          titulo: 'Chamado urgente',
-          mensagem: doc.data().titulo,
-          data: doc.data().dataCriacao?.toDate(),
-          lida: false,
-          link: '/admin/chamados',
-          icone: <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />
-        }));
-
-        setNotifications(prev => {
-          const novas = [...chamadosNotif, ...prev.filter(n => n.tipo !== 'chamado_urgente')];
-          return novas.slice(0, 20);
-        });
-      });
-
-      const unsubscribeUsuarios = onSnapshot(usuariosQuery, (snapshot) => {
-        const usuariosNotif = snapshot.docs.map(doc => ({
-          id: `usuario-${doc.id}`,
-          tipo: 'novo_usuario',
-          titulo: 'Novo usuário cadastrado',
-          mensagem: doc.data().nome,
-          data: doc.data().dataCriacao?.toDate(),
-          lida: false,
-          link: '/admin/usuarios',
-          icone: <UserPlusIcon className="w-5 h-5 text-green-400" />
-        }));
-
-        setNotifications(prev => {
-          const novas = [...usuariosNotif, ...prev.filter(n => n.tipo !== 'novo_usuario')];
-          return novas.slice(0, 20);
-        });
-      });
-
-      unsubscribe = () => {
-        unsubscribeChamados();
-        unsubscribeUsuarios();
+      const existing = await getDocs(q);
+      
+      // Se já existe notificação similar, não criar duplicada
+      if (!existing.empty) {
+        console.log('Notificação já existe, ignorando...');
+        return null;
+      }
+      
+      const notificacaoData = {
+        userId: userId,
+        titulo: titulo,
+        mensagem: mensagem,
+        tipo: tipo,
+        lida: false,
+        data: new Date(),
+        createdAt: serverTimestamp(),
+        chamadoId: chamadoId || null,
+        link: link || null
       };
-
-    } else if (userData.role === 'dentista') {
-      // Dentista: atualizações nos chamados
-      const q = query(
-        collection(db, 'chamados'),
-        where('solicitanteId', '==', userData.uid),
-        where('status', 'in', ['em_andamento', 'concluido']),
-        orderBy('dataAtualizacao', 'desc'),
-        limit(20)
-      );
-
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const agora = new Date();
-        const umDiaAtras = new Date(agora.setDate(agora.getDate() - 1));
-        
-        const notificacoes = snapshot.docs
-          .filter(doc => {
-            const data = doc.data().dataAtualizacao?.toDate();
-            return data && data > umDiaAtras;
-          })
-          .map(doc => ({
-            id: doc.id,
-            tipo: doc.data().status === 'concluido' ? 'chamado_concluido' : 'chamado_atualizado',
-            titulo: doc.data().status === 'concluido' ? 'Chamado concluído' : 'Chamado atualizado',
-            mensagem: doc.data().titulo,
-            data: doc.data().dataAtualizacao?.toDate(),
-            lida: false,
-            link: '/dentista/chamados',
-            icone: doc.data().status === 'concluido' 
-              ? <CheckCircleIcon className="w-5 h-5 text-green-400" />
-              : <ClockIcon className="w-5 h-5 text-yellow-400" />
-          }));
-
-        setNotifications(notificacoes);
-        setUnreadCount(notificacoes.length);
-      });
+      
+      const docRef = await addDoc(collection(db, 'notificacoes'), notificacaoData);
+      console.log('Notificação criada com sucesso:', docRef.id);
+      return docRef.id;
+    } catch (error) {
+      console.error('Erro ao criar notificação:', error);
+      // Não mostrar toast para evitar spam
+      return null;
     }
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [userData]);
-
-  // Atualizar contador de não lidas
-  useEffect(() => {
-    setUnreadCount(notifications.filter(n => !n.lida).length);
-  }, [notifications]);
-
-  const handleMarkAsRead = (notificationId) => {
-    setNotifications(prev =>
-      prev.map(n =>
-        n.id === notificationId ? { ...n, lida: true } : n
-      )
-    );
   };
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev =>
-      prev.map(n => ({ ...n, lida: true }))
-    );
+  // Função para marcar notificação como lida
+  const handleMarkAsRead = async (notificationId) => {
+    try {
+      const notifRef = doc(db, 'notificacoes', notificationId);
+      await updateDoc(notifRef, {
+        lida: true,
+        lidaEm: new Date()
+      });
+    } catch (error) {
+      console.error('Erro ao marcar notificação como lida:', error);
+      // Se erro de permissão, apenas atualizar localmente
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === notificationId ? { ...n, lida: true } : n
+        )
+      );
+    }
   };
 
-  const handleNotificationClick = (notification) => {
-    handleMarkAsRead(notification.id);
-    navigate(notification.link);
+  // Função para marcar todas como lidas
+  const handleMarkAllAsRead = async () => {
+    try {
+      const batch = writeBatch(db);
+      let hasUpdates = false;
+      
+      notifications.forEach(notif => {
+        if (!notif.lida) {
+          const notifRef = doc(db, 'notificacoes', notif.id);
+          batch.update(notifRef, {
+            lida: true,
+            lidaEm: new Date()
+          });
+          hasUpdates = true;
+        }
+      });
+      
+      if (hasUpdates) {
+        await batch.commit();
+        toast.success('Todas notificações marcadas como lidas');
+      }
+    } catch (error) {
+      console.error('Erro ao marcar todas como lidas:', error);
+      // Fallback: atualizar localmente
+      setNotifications(prev =>
+        prev.map(n => ({ ...n, lida: true }))
+      );
+      toast.success('Notificações marcadas como lidas localmente');
+    }
+  };
+
+  // Função ao clicar na notificação
+  const handleNotificationClick = async (notificacao) => {
+    // Marcar como lida se ainda não estiver
+    if (!notificacao.lida) {
+      await handleMarkAsRead(notificacao.id);
+    }
+    
+    // Navegar para a página relacionada
+    if (notificacao.link) {
+      navigate(notificacao.link);
+    } else if (notificacao.chamadoId) {
+      navigate(`/${userData?.role}/chamados/${notificacao.chamadoId}`);
+    }
+    
     setShowNotifications(false);
   };
+
+  // Função para obter ícone baseado no tipo
+  const getNotificationIcon = (tipo) => {
+    switch(tipo) {
+      case 'chamado_urgente':
+        return <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />;
+      case 'chamado_novo':
+        return <ClipboardDocumentListIcon className="w-5 h-5 text-blue-400" />;
+      case 'chamado_concluido':
+        return <CheckCircleIcon className="w-5 h-5 text-green-400" />;
+      case 'chamado_atualizado':
+        return <ClockIcon className="w-5 h-5 text-yellow-400" />;
+      case 'novo_usuario':
+        return <UserPlusIcon className="w-5 h-5 text-green-400" />;
+      default:
+        return <BellIcon className="w-5 h-5 text-gray-400" />;
+    }
+  };
+
+  // Carregar notificações do Firestore
+  useEffect(() => {
+    if (!userData?.uid) return;
+
+    console.log('Carregando notificações para usuário:', userData.uid);
+
+    const q = query(
+      collection(db, 'notificacoes'),
+      where('userId', '==', userData.uid),
+      orderBy('data', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const notificacoes = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          data: doc.data().data?.toDate?.() || doc.data().createdAt?.toDate?.() || new Date()
+        }));
+        
+        setNotifications(notificacoes);
+        const unread = notificacoes.filter(n => !n.lida).length;
+        setUnreadCount(unread);
+        console.log('Notificações carregadas:', notificacoes.length);
+      },
+      (error) => {
+        console.error('Erro ao carregar notificações:', error);
+        // Se erro de permissão, mostrar mensagem amigável
+        if (error.code === 'permission-denied') {
+          console.log('Sem permissão para ler notificações. Verifique as regras do Firebase.');
+        }
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userData?.uid]);
+
+  // Monitorar eventos em tempo real para criar notificações (APENAS PARA ADMIN)
+  useEffect(() => {
+    if (!userData || userData.role !== 'admin') return;
+
+    let unsubscribeChamados;
+    let unsubscribeUsuarios;
+
+    // Admin: monitorar chamados urgentes
+    const chamadosQuery = query(
+      collection(db, 'chamados'),
+      where('prioridade', 'in', ['alta', 'emergencial']),
+      where('status', 'in', ['aberto', 'em_andamento']),
+      orderBy('dataCriacao', 'desc'),
+      limit(10)
+    );
+
+    unsubscribeChamados = onSnapshot(chamadosQuery, (snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type === 'added') {
+          const chamado = change.doc.data();
+          
+          // Verificar se já existe notificação para este chamado
+          const existingNotif = notifications.find(n => n.chamadoId === change.doc.id);
+          if (!existingNotif) {
+            await createNotification(
+              userData.uid,
+              'Chamado Urgente',
+              `${chamado.titulo} - Prioridade ${chamado.prioridade}`,
+              'chamado_urgente',
+              '/admin/chamados',
+              change.doc.id
+            );
+          }
+        }
+      });
+    }, (error) => {
+      console.error('Erro no listener de chamados:', error);
+    });
+
+    // Admin: monitorar novos usuários
+    const usuariosQuery = query(
+      collection(db, 'usuarios'),
+      orderBy('dataCriacao', 'desc'),
+      limit(5)
+    );
+
+    unsubscribeUsuarios = onSnapshot(usuariosQuery, (snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type === 'added') {
+          const usuario = change.doc.data();
+          
+          // Não criar notificação para o próprio usuário
+          if (usuario.uid !== userData.uid) {
+            const existingNotif = notifications.find(n => n.id === `usuario-${change.doc.id}`);
+            if (!existingNotif) {
+              await createNotification(
+                userData.uid,
+                'Novo Usuário',
+                `${usuario.nome} (${usuario.role}) acabou de se cadastrar`,
+                'novo_usuario',
+                '/admin/usuarios'
+              );
+            }
+          }
+        }
+      });
+    }, (error) => {
+      console.error('Erro no listener de usuários:', error);
+    });
+
+    return () => {
+      if (unsubscribeChamados) unsubscribeChamados();
+      if (unsubscribeUsuarios) unsubscribeUsuarios();
+    };
+  }, [userData, notifications]);
 
   const handleLogout = async () => {
     await logout();
@@ -232,15 +333,18 @@ export default function Layout({ children }) {
       icon: ClipboardDocumentListIcon,
       path: `${basePath}/chamados`,
       roles: ['admin', 'dentista', 'tecnico']
-    },
-    {
+    }
+  ];
+
+  if (userData?.role === 'tecnico') {
+    menuItems.push({
       id: 'ordem-servico',
       name: 'Ordem de serviço',
       icon: ChartBarIcon, 
       path: '/tecnico/OrdemServico',
       roles: ['tecnico']
-    }
-  ];
+    });
+  }
 
   if (userData?.role === 'admin') {
     menuItems.push(
@@ -303,49 +407,42 @@ export default function Layout({ children }) {
     if (minutes < 1) return 'Agora mesmo';
     if (minutes < 60) return `${minutes} min atrás`;
     if (hours < 24) return `${hours} h atrás`;
-    return `${days} d atrás`;
+    if (days < 7) return `${days} d atrás`;
+    
+    return new Date(date).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit'
+    });
   };
 
   return (
     <div className="min-h-screen bg-gray-800">
-      {/* Header */}
+      {/* Header - mantido igual */}
       <header className="bg-gray-700 border-b border-gray-600 sticky top-0 z-30">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              {/* Botão do menu mobile */}
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="lg:hidden p-2 rounded-md text-gray-300 hover:bg-gray-700 mr-2"
               >
-                {sidebarOpen ? (
-                  <XMarkIcon className="h-5 w-5" />
-                ) : (
-                  <Bars3Icon className="h-5 w-5" />
-                )}
+                {sidebarOpen ? <XMarkIcon className="h-5 w-5" /> : <Bars3Icon className="h-5 w-5" />}
               </button>
 
-              {/* Botão de colapsar sidebar (desktop) */}
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                 className="hidden lg:flex p-2 rounded-md text-gray-300 hover:bg-gray-700 mr-2"
               >
-                {sidebarCollapsed ? (
-                  <ChevronRightIcon className="h-5 w-5" />
-                ) : (
-                  <ChevronLeftIcon className="h-5 w-5" />
-                )}
+                {sidebarCollapsed ? <ChevronRightIcon className="h-5 w-5" /> : <ChevronLeftIcon className="h-5 w-5" />}
               </button>
               
-              {/* Logo */}
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-                  <span className="text-white font-bold text-base">O</span>
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-white rounded-lg flex items-center justify-center shadow-lg">
+                  <img src="/logo.ico" alt="Logo" />
                 </div>
                 <h1 className="text-lg font-bold text-white">Ortodonsist</h1>
               </div>
               
-              {/* Badge de Role */}
               <div className="ml-4 px-3 py-1 bg-gray-700 text-gray-200 text-sm rounded-full hidden sm:flex items-center gap-1.5 shadow-sm">
                 {getRoleIcon()}
                 <span>
@@ -357,7 +454,7 @@ export default function Layout({ children }) {
             </div>
 
             <div className="flex items-center space-x-2">
-              {/* Notificações - Agora com dropdown */}
+              {/* Notificações */}
               <div className="relative">
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -371,7 +468,6 @@ export default function Layout({ children }) {
                   )}
                 </button>
 
-                {/* Dropdown de Notificações */}
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 bg-gray-900 rounded-lg shadow-xl border border-gray-700 z-50">
                     <div className="p-3 border-b border-gray-700 flex justify-between items-center">
@@ -398,7 +494,7 @@ export default function Layout({ children }) {
                           >
                             <div className="flex gap-3">
                               <div className="flex-shrink-0">
-                                {notif.icone}
+                                {getNotificationIcon(notif.tipo)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-gray-200">
@@ -425,18 +521,6 @@ export default function Layout({ children }) {
                         </div>
                       )}
                     </div>
-
-                    <div className="p-2 border-t border-gray-700">
-                      <button
-                        onClick={() => {
-                          setShowNotifications(false);
-                          navigate(`/${userData?.role}/chamados`);
-                        }}
-                        className="w-full text-center text-xs text-gray-400 hover:text-gray-300 py-1"
-                      >
-                        Ver todas as notificações
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
@@ -458,7 +542,6 @@ export default function Layout({ children }) {
                   </div>
                 </button>
 
-                {/* Dropdown do Usuário */}
                 {showUserMenu && (
                   <div className="absolute right-0 mt-2 w-48 bg-gray-900 rounded-lg shadow-xl border border-gray-700 py-1 z-50">
                     <div className="px-4 py-2 border-b border-gray-700">

@@ -6,7 +6,8 @@ import {
   onSnapshot, 
   orderBy,
   limit,
-  where 
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
@@ -29,7 +30,12 @@ import {
   StarIcon,
   PhoneIcon,
   EnvelopeIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  XMarkIcon,
+  CalendarDaysIcon,
+  UserIcon,
+  ComputerDesktopIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import { 
   Chart as ChartJS, 
@@ -48,7 +54,7 @@ import { Pie, Bar, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import GerenciarUsuariosModal from '../../pages/Admin/GerenciarUsuariosModal';
 import RelatoriosModal from '../../pages/Admin/RelatoriosModal';
-import {Link} from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -64,9 +70,253 @@ ChartJS.register(
   Filler
 );
 
+// ============================================
+// COMPONENTE MODAL DE DETALHES DO CHAMADO
+// ============================================
+function DetalhesChamadoModal({ chamado, isOpen, onClose }) {
+  if (!isOpen || !chamado) return null;
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'aberto': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'em_andamento': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'concluido': return 'bg-green-100 text-green-800 border-green-200';
+      case 'cancelado': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getPrioridadeColor = (prioridade) => {
+    switch(prioridade) {
+      case 'emergencial': return 'bg-red-600 text-white';
+      case 'alta': return 'bg-red-100 text-red-800 border-red-200';
+      case 'media': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'baixa': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getPrioridadeTexto = (prioridade) => {
+    switch(prioridade) {
+      case 'emergencial': return '🚨 Emergencial';
+      case 'alta': return '🔴 Alta';
+      case 'media': return '🟡 Média';
+      case 'baixa': return '🟢 Baixa';
+      default: return '📌 Normal';
+    }
+  };
+
+  const getStatusTexto = (status) => {
+    switch(status) {
+      case 'aberto': return '📋 Aberto';
+      case 'em_andamento': return '⚙️ Em Andamento';
+      case 'concluido': return '✅ Concluído';
+      case 'cancelado': return '❌ Cancelado';
+      default: return status;
+    }
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'Não definida';
+    try {
+      return new Date(date).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return 'Data inválida';
+    }
+  };
+
+  // Para debug - veja no console o que está vindo
+  console.log('Modal abriu com chamado:', chamado);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      {/* Overlay escuro */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose}></div>
+
+      {/* Container do Modal */}
+      <div className="fixed inset-0 z-10 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          {/* Modal Content */}
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg">
+                    <WrenchScrewdriverIcon className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      Detalhes do Chamado
+                    </h3>
+                    <p className="text-sm text-blue-100">ID: {chamado.id?.slice(0, 8)}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="text-white hover:bg-white/20 rounded-lg p-1 transition"
+                >
+                  <XMarkIcon className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content - Scrollável */}
+            <div className="px-6 py-4 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 120px)' }}>
+              {/* Título e Status */}
+              <div className="mb-6">
+                <div className="flex items-start justify-between flex-wrap gap-3">
+                  <h2 className="text-2xl font-bold text-gray-800">{chamado.titulo || 'Sem título'}</h2>
+                  <div className="flex gap-2">
+                    <span className={`px-3 py-1 text-sm rounded-full border ${getStatusColor(chamado.status)}`}>
+                      {getStatusTexto(chamado.status)}
+                    </span>
+                    <span className={`px-3 py-1 text-sm rounded-full font-medium ${getPrioridadeColor(chamado.prioridade)}`}>
+                      {getPrioridadeTexto(chamado.prioridade)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid de informações */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                {/* Solicitante */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <UserIcon className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-gray-700">Solicitante</h4>
+                  </div>
+                  <p className="text-gray-900 font-medium">{chamado.solicitanteNome || 'Não informado'}</p>
+                  <p className="text-sm text-gray-500">{chamado.solicitanteEmail || 'Email não informado'}</p>
+                </div>
+
+                {/* Equipamento */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ComputerDesktopIcon className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-gray-700">Equipamento</h4>
+                  </div>
+                  <p className="text-gray-900 font-medium">{chamado.equipamento || 'Não informado'}</p>
+                  <p className="text-sm text-gray-500">Tipo: {chamado.tipoEquipamento || 'Não especificado'}</p>
+                </div>
+
+                {/* Data de Criação */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CalendarDaysIcon className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-gray-700">Datas</h4>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Abertura:</span> {formatDate(chamado.dataCriacao)}
+                  </p>
+                  {chamado.dataConclusao && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      <span className="font-medium">Conclusão:</span> {formatDate(chamado.dataConclusao)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Técnico Responsável */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <UsersIcon className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-semibold text-gray-700">Técnico</h4>
+                  </div>
+                  <p className="text-gray-900 font-medium">{chamado.tecnicoNome || 'Não atribuído'}</p>
+                  {chamado.tecnicoEmail && (
+                    <p className="text-sm text-gray-500">{chamado.tecnicoEmail}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Descrição */}
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <DocumentTextIcon className="w-5 h-5 text-blue-600" />
+                  <h4 className="font-semibold text-gray-700">Descrição do Problema</h4>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-700 whitespace-pre-wrap">
+                    {chamado.descricao || 'Nenhuma descrição fornecida'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Solução (se concluído) */}
+              {chamado.solucao && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircleIcon className="w-5 h-5 text-green-600" />
+                    <h4 className="font-semibold text-gray-700">Solução Aplicada</h4>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                    <p className="text-gray-700 whitespace-pre-wrap">{chamado.solucao}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Avaliação (se houver) */}
+              {chamado.avaliacao && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <StarIcon className="w-5 h-5 text-yellow-500" />
+                    <h4 className="font-semibold text-gray-700">Avaliação do Cliente</h4>
+                  </div>
+                  <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map((nota) => (
+                          <StarIcon 
+                            key={nota} 
+                            className={`w-5 h-5 ${nota <= chamado.avaliacao?.nota ? 'text-yellow-500 fill-current' : 'text-gray-300'}`}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-sm text-gray-600">
+                        ({chamado.avaliacao?.nota}/5)
+                      </span>
+                    </div>
+                    {chamado.avaliacao?.comentario && (
+                      <p className="text-gray-700 text-sm mt-2 italic">
+                        "{chamado.avaliacao.comentario}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 px-6  flex justify-end gap-2">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COMPONENTE PRINCIPAL DASHBOARD
+// ============================================
 export default function AdminDashboard() {
   const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [chamadoSelecionado, setChamadoSelecionado] = useState(null);
+  const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [stats, setStats] = useState({
     totalChamados: 0,
     chamadosAbertos: 0,
@@ -78,7 +328,8 @@ export default function AdminDashboard() {
     tempoMedioAtendimento: 0,
     satisfacaoMedia: 0,
     chamadosUrgentes: 0,
-    taxaResolucao: 0
+    taxaResolucao: 0,
+    chamadosAvaliados: 0
   });
   
   const [chamadosRecentes, setChamadosRecentes] = useState([]);
@@ -89,11 +340,16 @@ export default function AdminDashboard() {
   
   const [showUsuariosModal, setShowUsuariosModal] = useState(false);
   const [showRelatoriosModal, setShowRelatoriosModal] = useState(false);
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [periodo, setPeriodo] = useState('semana');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriodo, setSelectedPeriodo] = useState('7dias');
+
+  // Função para abrir modal de detalhes - CORRIGIDA
+  const handleViewChamado = (chamado) => {
+    console.log('Abrindo modal do chamado:', chamado);
+    setChamadoSelecionado(chamado);
+    setShowDetalhesModal(true);
+  };
 
   useEffect(() => {
     const carregarDados = async () => {
@@ -108,8 +364,11 @@ export default function AdminDashboard() {
           const chamados = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
-            dataCriacao: doc.data().dataCriacao?.toDate()
+            dataCriacao: doc.data().dataCriacao?.toDate(),
+            dataConclusao: doc.data().dataConclusao?.toDate()
           }));
+
+          console.log('Chamados carregados:', chamados.length);
 
           // Calcular estatísticas detalhadas
           const abertos = chamados.filter(c => c.status === 'aberto').length;
@@ -118,11 +377,9 @@ export default function AdminDashboard() {
           const cancelados = chamados.filter(c => c.status === 'cancelado').length;
           const urgentes = chamados.filter(c => c.prioridade === 'alta' || c.prioridade === 'emergencial').length;
           
-          // Calcular taxa de resolução
           const totalResolvidos = concluidos;
           const taxaResolucao = chamados.length > 0 ? (totalResolvidos / chamados.length) * 100 : 0;
 
-          // Calcular média de satisfação
           const chamadosAvaliados = chamados.filter(c => c.avaliacao);
           const somaNotas = chamadosAvaliados.reduce((acc, c) => acc + (c.avaliacao?.nota || 0), 0);
           const satisfacaoMedia = chamadosAvaliados.length > 0 ? somaNotas / chamadosAvaliados.length : 0;
@@ -136,14 +393,28 @@ export default function AdminDashboard() {
             chamadosCancelados: cancelados,
             chamadosUrgentes: urgentes,
             satisfacaoMedia: satisfacaoMedia,
-            taxaResolucao: taxaResolucao
+            taxaResolucao: taxaResolucao,
+            chamadosAvaliados: chamadosAvaliados.length
           }));
 
-          // Chamados recentes
-          const recentes = chamados.slice(0, 5);
-          setChamadosRecentes(recentes);
+          // Chamados recentes com filtro
+          let filteredChamados = [...chamados];
+          
+          if (filtroStatus !== 'todos') {
+            filteredChamados = filteredChamados.filter(c => c.status === filtroStatus);
+          }
+          
+          if (searchTerm) {
+            filteredChamados = filteredChamados.filter(c => 
+              c.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              c.solicitanteNome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              c.equipamento?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+          }
+          
+          setChamadosRecentes(filteredChamados.slice(0, 10));
 
-          // Agrupar chamados por dia (últimos 7 dias)
+          // Agrupar chamados por dia
           const ultimos7Dias = [];
           for (let i = 6; i >= 0; i--) {
             const data = new Date();
@@ -186,42 +457,80 @@ export default function AdminDashboard() {
 
         // Carregar usuários
         const usuariosQuery = query(collection(db, 'usuarios'));
-        const unsubscribeUsuarios = onSnapshot(usuariosQuery, (snapshot) => {
+        const unsubscribeUsuarios = onSnapshot(usuariosQuery, async (snapshot) => {
           const usuarios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           
-          const tecnicos = usuarios.filter(u => u.role === 'tecnico').length;
-          const dentistas = usuarios.filter(u => u.role === 'dentista').length;
+          const tecnicos = usuarios.filter(u => u.role === 'tecnico');
+          const dentistas = usuarios.filter(u => u.role === 'dentista');
 
           setStats(prev => ({
             ...prev,
-            totalTecnicos: tecnicos,
-            totalDentistas: dentistas
+            totalTecnicos: tecnicos.length,
+            totalDentistas: dentistas.length
           }));
 
-          // Status dos técnicos em tempo real
-          const tecnicosAtivos = usuarios
-            .filter(u => u.role === 'tecnico' && u.ativo)
-            .map(t => ({
-              id: t.id,
-              nome: t.nome,
-              chamadosAtivos: 0,
-              concluidosHoje: 0,
-              status: 'disponivel',
-              foto: t.foto
-            }));
-          setTecnicosStatus(tecnicosAtivos);
+          const chamadosSnapshot = await getDocs(collection(db, 'chamados'));
+          const todosChamados = chamadosSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            dataCriacao: doc.data().dataCriacao?.toDate(),
+            dataConclusao: doc.data().dataConclusao?.toDate()
+          }));
 
-          // Top técnicos por desempenho
-          const tecnicosComChamados = usuarios
-            .filter(u => u.role === 'tecnico')
-            .map(t => ({
-              nome: t.nome,
-              chamadosConcluidos: 0,
-              mediaAvaliacao: 0
-            }))
-            .sort((a, b) => b.chamadosConcluidos - a.chamadosConcluidos)
-            .slice(0, 3);
-          setTopTecnicos(tecnicosComChamados);
+          // Status dos técnicos
+          const tecnicosComMetricas = tecnicos
+            .filter(t => t.ativo !== false)
+            .map(tecnico => {
+              const chamadosAtivos = todosChamados.filter(c => 
+                c.tecnicoId === tecnico.id && 
+                (c.status === 'aberto' || c.status === 'em_andamento')
+              ).length;
+              
+              const hoje = new Date();
+              hoje.setHours(0, 0, 0, 0);
+              const concluidosHoje = todosChamados.filter(c => 
+                c.tecnicoId === tecnico.id && 
+                c.status === 'concluido' &&
+                c.dataConclusao >= hoje
+              ).length;
+
+              return {
+                id: tecnico.id,
+                nome: tecnico.nome || 'Sem nome',
+                chamadosAtivos: chamadosAtivos,
+                concluidosHoje: concluidosHoje,
+                status: chamadosAtivos > 0 ? 'ocupado' : 'disponivel'
+              };
+            })
+            .sort((a, b) => b.concluidosHoje - a.concluidosHoje);
+
+          setTecnicosStatus(tecnicosComMetricas);
+
+          // Top técnicos
+          const tecnicosComDesempenho = tecnicos.map(tecnico => {
+            const chamadosDoTecnico = todosChamados.filter(c => c.tecnicoId === tecnico.id);
+            const chamadosConcluidos = chamadosDoTecnico.filter(c => c.status === 'concluido').length;
+            
+            const avaliacoes = chamadosDoTecnico
+              .filter(c => c.avaliacao?.nota)
+              .map(c => c.avaliacao.nota);
+            
+            const mediaAvaliacao = avaliacoes.length > 0 
+              ? avaliacoes.reduce((a, b) => a + b, 0) / avaliacoes.length 
+              : 0;
+
+            return {
+              id: tecnico.id,
+              nome: tecnico.nome || 'Sem nome',
+              chamadosConcluidos: chamadosConcluidos,
+              mediaAvaliacao: mediaAvaliacao
+            };
+          })
+          .filter(t => t.chamadosConcluidos > 0)
+          .sort((a, b) => b.mediaAvaliacao - a.mediaAvaliacao)
+          .slice(0, 5);
+
+          setTopTecnicos(tecnicosComDesempenho);
         });
 
         setLoading(false);
@@ -238,7 +547,7 @@ export default function AdminDashboard() {
     };
 
     carregarDados();
-  }, []);
+  }, [filtroStatus, searchTerm]);
 
   // Dados para os gráficos
   const dadosStatus = {
@@ -289,7 +598,7 @@ export default function AdminDashboard() {
   };
 
   const dadosEquipamentos = {
-    labels: equipamentosProblema.map(e => e.nome),
+    labels: equipamentosProblema.map(e => e.nome?.length > 20 ? e.nome.substring(0, 20) + '...' : e.nome),
     datasets: [
       {
         label: 'Número de Chamados',
@@ -414,179 +723,104 @@ export default function AdminDashboard() {
       </div>
 
       {/* Cards de Estatísticas Principal */}
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-  {/* Total de Chamados */}
-  <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
-    <div className="flex items-center justify-between mb-4">
-      <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-        <WrenchScrewdriverIcon className="w-7 h-7" />
-      </div>
-      <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
-        Total
-      </span>
-    </div>
-    <p className="text-4xl font-bold mb-1">{stats.totalChamados}</p>
-    <p className="text-sm text-blue-100 font-medium">Chamados Totais</p>
-    <div className="mt-4 flex items-center gap-2">
-      <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-        <div className="h-full bg-white rounded-full" style={{ width: '100%' }}></div>
-      </div>
-      <span className="text-xs text-white/80">100%</span>
-    </div>
-  </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Total de Chamados */}
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+              <WrenchScrewdriverIcon className="w-7 h-7" />
+            </div>
+            <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
+              Total
+            </span>
+          </div>
+          <p className="text-4xl font-bold mb-1">{stats.totalChamados}</p>
+          <p className="text-sm text-blue-100 font-medium">Chamados Totais</p>
+        </div>
 
-  {/* Abertos */}
-  <div className="bg-gradient-to-br from-yellow-500 to-orange-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
-    <div className="flex items-center justify-between mb-4">
-      <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-        <ClockIcon className="w-7 h-7" />
-      </div>
-      <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
-        Abertos
-      </span>
-    </div>
-    <p className="text-4xl font-bold mb-1">{stats.chamadosAbertos}</p>
-    <p className="text-sm text-yellow-100 font-medium">Aguardando Atendimento</p>
-    <div className="mt-4 flex items-center gap-2">
-      <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
-        <div 
-          className="h-full bg-white rounded-full" 
-          style={{ width: `${stats.totalChamados > 0 ? (stats.chamadosAbertos / stats.totalChamados) * 100 : 0}%` }}
-        ></div>
-      </div>
-      <span className="text-xs text-white/80">
-        {stats.totalChamados > 0 ? ((stats.chamadosAbertos / stats.totalChamados) * 100).toFixed(1) : 0}%
-      </span>
-    </div>
-  </div>
+        {/* Abertos */}
+        <div className="bg-gradient-to-br from-yellow-500 to-orange-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+              <ClockIcon className="w-7 h-7" />
+            </div>
+            <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
+              Abertos
+            </span>
+          </div>
+          <p className="text-4xl font-bold mb-1">{stats.chamadosAbertos}</p>
+          <p className="text-sm text-yellow-100 font-medium">Aguardando Atendimento</p>
+        </div>
 
-  {/* Concluídos */}
-  <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
-    <div className="flex items-center justify-between mb-4">
-      <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-        <CheckCircleIcon className="w-7 h-7" />
-      </div>
-      <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
-        Concluídos
-      </span>
-    </div>
-    <p className="text-4xl font-bold mb-1">{stats.chamadosConcluidos}</p>
-    <p className="text-sm text-green-100 font-medium">Chamados Concluídos</p>
-    <div className="mt-4 grid grid-cols-2 gap-2">
-      <div className="bg-white/20 rounded-lg p-2 text-center">
-        <p className="text-xs text-green-100">Taxa</p>
-        <p className="text-lg font-bold">{stats.taxaResolucao.toFixed(1)}%</p>
-      </div>
-      <div className="bg-white/20 rounded-lg p-2 text-center">
-        <p className="text-xs text-green-100">Este mês</p>
-        <p className="text-lg font-bold">{stats.chamadosConcluidos}</p>
-      </div>
-    </div>
-  </div>
+        {/* Concluídos */}
+        <div className="bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+              <CheckCircleIcon className="w-7 h-7" />
+            </div>
+            <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
+              Concluídos
+            </span>
+          </div>
+          <p className="text-4xl font-bold mb-1">{stats.chamadosConcluidos}</p>
+          <p className="text-sm text-green-100 font-medium">Chamados Concluídos</p>
+        </div>
 
-  {/* Satisfação */}
-  <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
-    <div className="flex items-center justify-between mb-4">
-      <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
-        <StarIcon className="w-7 h-7" />
+        {/* Satisfação */}
+        <div className="bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl shadow-lg p-6 text-white transform hover:scale-105 transition-transform duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+              <StarIcon className="w-7 h-7" />
+            </div>
+            <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
+              Satisfação
+            </span>
+          </div>
+          <p className="text-4xl font-bold mb-1">{stats.satisfacaoMedia > 0 ? stats.satisfacaoMedia.toFixed(1) : '0.0'}</p>
+          <p className="text-sm text-purple-100 font-medium">
+            {stats.satisfacaoMedia > 0 ? `Média de ${stats.satisfacaoMedia.toFixed(1)}/5` : 'Aguardando avaliações'}
+          </p>
+        </div>
       </div>
-      <span className="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm font-medium">
-        Satisfação
-      </span>
-    </div>
-    <p className="text-4xl font-bold mb-1">{stats.satisfacaoMedia > 0 ? stats.satisfacaoMedia.toFixed(1) : '0.0'}</p>
-    <p className="text-sm text-purple-100 font-medium">
-      {stats.satisfacaoMedia > 0 ? `Média de ${stats.satisfacaoMedia.toFixed(1)}/5` : 'Aguardando avaliações'}
-    </p>
-    <div className="mt-4 flex items-center justify-between">
-      <div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((nota) => (
-          <StarIcon 
-            key={nota} 
-            className={`w-5 h-5 ${nota <= Math.round(stats.satisfacaoMedia) ? 'text-yellow-300' : 'text-white/30'}`}
-            fill={nota <= Math.round(stats.satisfacaoMedia) ? 'currentColor' : 'none'}
-          />
-        ))}
-      </div>
-      <span className="text-sm bg-white/20 px-3 py-1 rounded-full">
-        {stats.chamadosAvaliados || 0} avaliações
-      </span>
-    </div>
-  </div>
-</div>
 
       {/* Cards de Métricas Rápidas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Em Andamento</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-blue-600">{stats.chamadosAndamento}</p>
-            <ArrowPathIcon className="w-5 h-5 text-blue-500 animate-spin-slow" />
-          </div>
+          <p className="text-2xl font-bold text-blue-600">{stats.chamadosAndamento}</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Urgentes</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-red-600">{stats.chamadosUrgentes}</p>
-            <ExclamationTriangleIcon className="w-5 h-5 text-red-500" />
-          </div>
+          <p className="text-2xl font-bold text-red-600">{stats.chamadosUrgentes}</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Técnicos</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-purple-600">{stats.totalTecnicos}</p>
-            <UsersIcon className="w-5 h-5 text-purple-500" />
-          </div>
+          <p className="text-2xl font-bold text-purple-600">{stats.totalTecnicos}</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Dentistas</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-bold text-green-600">{stats.totalDentistas}</p>
-            <BuildingOfficeIcon className="w-5 h-5 text-green-500" />
-          </div>
+          <p className="text-2xl font-bold text-green-600">{stats.totalDentistas}</p>
         </div>
       </div>
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Gráfico de Pizza - Status */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Distribuição por Status</h3>
           <div className="h-64">
             <Pie data={dadosStatus} options={opcoesGrafico} />
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-              <span>Abertos: {stats.chamadosAbertos}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-400"></div>
-              <span>Andamento: {stats.chamadosAndamento}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-green-400"></div>
-              <span>Concluídos: {stats.chamadosConcluidos}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-              <span>Cancelados: {stats.chamadosCancelados}</span>
-            </div>
-          </div>
         </div>
 
-        {/* Gráfico de Linha - Evolução */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 lg:col-span-2">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-800">Evolução de Chamados</h3>
             <select 
               value={selectedPeriodo}
               onChange={(e) => setSelectedPeriodo(e.target.value)}
-              className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1 border border-gray-300 rounded-lg text-sm"
             >
               <option value="7dias">Últimos 7 dias</option>
-              <option value="15dias">Últimos 15 dias</option>
-              <option value="30dias">Últimos 30 dias</option>
             </select>
           </div>
           <div className="h-64">
@@ -595,57 +829,48 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Equipamentos com mais problemas e Top Técnicos */}
+      {/* Equipamentos e Top Técnicos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico de Equipamentos */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Equipamentos com mais Problemas</h3>
           <div className="h-64">
-            <Bar data={dadosEquipamentos} options={{
-              ...opcoesGrafico,
-              indexAxis: 'y',
-              plugins: {
-                ...opcoesGrafico.plugins,
-                legend: { display: false }
-              }
-            }} />
+            {equipamentosProblema.length > 0 ? (
+              <Bar data={dadosEquipamentos} options={{
+                ...opcoesGrafico,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } }
+              }} />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                Nenhum dado disponível
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Top Técnicos */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Top Técnicos</h3>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">🏆 Top Técnicos</h3>
           <div className="space-y-4">
-            {topTecnicos.map((tecnico, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    index === 0 ? 'bg-yellow-100' :
-                    index === 1 ? 'bg-gray-100' :
-                    'bg-orange-100'
-                  }`}>
-                    <span className={`font-bold ${
-                      index === 0 ? 'text-yellow-600' :
-                      index === 1 ? 'text-gray-600' :
-                      'text-orange-600'
-                    }`}>#{index + 1}</span>
+            {topTecnicos.length > 0 ? (
+              topTecnicos.map((tecnico, index) => (
+                <div key={tecnico.id || index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-blue-600">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-800">{tecnico.nome}</p>
+                      <p className="text-xs text-gray-500">✅ {tecnico.chamadosConcluidos} concluídos</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-800">{tecnico.nome}</p>
-                    <p className="text-xs text-gray-500">
-                      {tecnico.chamadosConcluidos} chamados concluídos
-                    </p>
+                  <div className="flex items-center gap-1">
+                    <StarIcon className="w-4 h-4 text-yellow-500" />
+                    <span className="font-medium">{tecnico.mediaAvaliacao.toFixed(1)}</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-green-600">
-                    {tecnico.mediaAvaliacao > 0 ? `${tecnico.mediaAvaliacao} ★` : 'Sem avaliação'}
-                  </p>
-                </div>
-              </div>
-            ))}
-            {topTecnicos.length === 0 && (
-              <p className="text-center text-gray-500 py-4">Nenhum técnico encontrado</p>
+              ))
+            ) : (
+              <p className="text-center text-gray-500 py-8">Nenhum técnico com chamados</p>
             )}
           </div>
         </div>
@@ -657,13 +882,12 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
           <div className="p-6 border-b border-gray-100">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-800">Chamados Recentes</h3>
-              <Link to="/admin/chamados" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-                Ver todos
+              <h3 className="text-lg font-semibold text-gray-800">📋 Chamados Recentes</h3>
+              <Link to="/admin/chamados" className="text-sm text-blue-600 hover:text-blue-800">
+                Ver todos →
               </Link>
             </div>
             
-            {/* Filtros */}
             <div className="flex gap-3 mt-4">
               <div className="flex-1 relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -672,13 +896,13 @@ export default function AdminDashboard() {
                   placeholder="Buscar chamados..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg"
                 />
               </div>
               <select
                 value={filtroStatus}
                 onChange={(e) => setFiltroStatus(e.target.value)}
-                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
               >
                 <option value="todos">Todos status</option>
                 <option value="aberto">Abertos</option>
@@ -704,11 +928,11 @@ export default function AdminDashboard() {
                 {chamadosRecentes.map((chamado) => (
                   <tr key={chamado.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{chamado.titulo}</div>
-                      <div className="text-xs text-gray-500">{chamado.equipamento}</div>
+                      <div className="text-sm font-medium text-gray-900">{chamado.titulo || 'Sem título'}</div>
+                      <div className="text-xs text-gray-500">{chamado.equipamento || 'Sem equipamento'}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">{chamado.solicitanteNome}</div>
+                      <div className="text-sm text-gray-900">{chamado.solicitanteNome || 'Desconhecido'}</div>
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getStatusColor(chamado.status)}`}>
@@ -721,14 +945,18 @@ export default function AdminDashboard() {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 text-xs rounded-full border ${getPrioridadeBadge(chamado.prioridade)}`}>
-                        {chamado.prioridade}
+                        {chamado.prioridade || 'Normal'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {formatDate(chamado.dataCriacao)}
                     </td>
                     <td className="px-6 py-4">
-                      <button className="text-blue-600 hover:text-blue-800">
+                      <button 
+                        onClick={() => handleViewChamado(chamado)}
+                        className="text-blue-600 hover:text-blue-800 transition-colors"
+                        title="Visualizar chamado"
+                      >
                         <EyeIcon className="w-5 h-5" />
                       </button>
                     </td>
@@ -749,52 +977,57 @@ export default function AdminDashboard() {
         {/* Status dos Técnicos */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Técnicos em Atividade</h3>
+            <h3 className="text-lg font-semibold text-gray-800">👨‍🔧 Técnicos em Atividade</h3>
             <button
               onClick={() => setShowUsuariosModal(true)}
               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-              title="Gerenciar usuários"
             >
               <UserPlusIcon className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="space-y-4">
-            {tecnicosStatus.map((tecnico, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {tecnico.nome?.charAt(0).toUpperCase()}
+          <div className="space-y-3">
+            {tecnicosStatus.length > 0 ? (
+              tecnicosStatus.map((tecnico, index) => (
+                <div key={tecnico.id || index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                        {tecnico.nome?.charAt(0).toUpperCase() || 'T'}
+                      </div>
+                      <span className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-white rounded-full ${tecnico.status === 'disponivel' ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                     </div>
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+                    <div>
+                      <p className="font-medium text-gray-800">{tecnico.nome}</p>
+                      <p className="text-xs text-gray-500">
+                        {tecnico.status === 'disponivel' ? '🟢 Disponível' : '🟡 Ocupado'} • {tecnico.chamadosAtivos} ativos
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-800">{tecnico.nome}</p>
-                    <p className="text-xs text-gray-500">
-                      <span className="text-green-600 font-medium">Online</span> • {tecnico.chamadosAtivos} chamados
-                    </p>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">Hoje</p>
+                    <p className="font-medium text-green-600">{tecnico.concluidosHoje}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-gray-500">Hoje</span>
-                  <p className="font-medium text-green-600">{tecnico.concluidosHoje}</p>
-                </div>
-              </div>
-            ))}
-
-            {tecnicosStatus.length === 0 && (
-              <p className="text-center text-gray-500 py-4">
-                Nenhum técnico ativo no momento
-              </p>
+              ))
+            ) : (
+              <p className="text-center text-gray-500 py-8">Nenhum técnico ativo</p>
             )}
           </div>
-
-        
         </div>
       </div>
 
-      {/* Modais */}
+      {/* Modal de Detalhes do Chamado */}
+      <DetalhesChamadoModal 
+        chamado={chamadoSelecionado}
+        isOpen={showDetalhesModal}
+        onClose={() => {
+          setShowDetalhesModal(false);
+          setChamadoSelecionado(null);
+        }}
+      />
+
+      {/* Modais existentes */}
       <GerenciarUsuariosModal 
         isOpen={showUsuariosModal}
         onClose={() => setShowUsuariosModal(false)}
@@ -804,8 +1037,6 @@ export default function AdminDashboard() {
         isOpen={showRelatoriosModal}
         onClose={() => setShowRelatoriosModal(false)}
       />
-      
-      
     </div>
   );
 }

@@ -60,6 +60,7 @@ function AppRoutes() {
           </Layout>
         </PrivateRoute>
       } />
+
       <Route path="/admin/chamados" element={
         <PrivateRoute allowedRoles={['admin']}>
           <Layout currentPage="chamados">

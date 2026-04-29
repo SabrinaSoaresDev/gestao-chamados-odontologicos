@@ -35,6 +35,7 @@ import {
   FilmIcon,
   PlayIcon,
   MapPinIcon
+  
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -1124,148 +1125,153 @@ export default function AdminChamados() {
         </div>
       )}
 
-      {/* Modal de Edição */}
-      {showEditModal && selectedChamado && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-2xl w-full">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800">Editar Chamado</h2>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <XMarkIcon className="w-6 h-6" />
-              </button>
-            </div>
+     {/* Modal de Edição */}
+{showEditModal && selectedChamado && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+      {/* Header - Fixo */}
+      <div className="p-6 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+        <h2 className="text-xl font-bold text-gray-800">Editar Chamado</h2>
+        <button
+          onClick={() => setShowEditModal(false)}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <XMarkIcon className="w-6 h-6" />
+        </button>
+      </div>
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                const chamadoRef = doc(db, 'chamados', selectedChamado.id);
-                await updateDoc(chamadoRef, {
-                  titulo: selectedChamado.titulo,
-                  equipamento: selectedChamado.equipamento,
-                  unidade: selectedChamado.unidade,
-                  descricao: selectedChamado.descricao,
-                  prioridade: selectedChamado.prioridade,
-                  historico: [
-                    ...(selectedChamado.historico || []),
-                    {
-                      data: new Date(),
-                      acao: 'Chamado editado pelo administrador',
-                      usuario: userData.nome,
-                      tipo: 'edicao'
-                    }
-                  ]
-                });
-                toast.success('Chamado atualizado com sucesso!');
-                setShowEditModal(false);
-              } catch (error) {
-                toast.error('Erro ao atualizar chamado');
+      {/* Formulário com Scroll */}
+      <form onSubmit={async (e) => {
+        e.preventDefault();
+        try {
+          const chamadoRef = doc(db, 'chamados', selectedChamado.id);
+          await updateDoc(chamadoRef, {
+            titulo: selectedChamado.titulo,
+            equipamento: selectedChamado.equipamento,
+            unidade: selectedChamado.unidade,
+            descricao: selectedChamado.descricao,
+            prioridade: selectedChamado.prioridade,
+            historico: [
+              ...(selectedChamado.historico || []),
+              {
+                data: new Date(),
+                acao: 'Chamado editado pelo administrador',
+                usuario: userData.nome,
+                tipo: 'edicao'
               }
-            }} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Título do Chamado
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={selectedChamado.titulo}
-                  onChange={(e) => setSelectedChamado({
-                    ...selectedChamado,
-                    titulo: e.target.value
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            ]
+          });
+          toast.success('Chamado atualizado com sucesso!');
+          setShowEditModal(false);
+        } catch (error) {
+          toast.error('Erro ao atualizar chamado');
+        }
+      }} className="flex-1 overflow-y-auto">
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Título do Chamado
+            </label>
+            <input
+              type="text"
+              required
+              value={selectedChamado.titulo}
+              onChange={(e) => setSelectedChamado({
+                ...selectedChamado,
+                titulo: e.target.value
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Equipamento
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={selectedChamado.equipamento}
-                  onChange={(e) => setSelectedChamado({
-                    ...selectedChamado,
-                    equipamento: e.target.value
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Equipamento
+            </label>
+            <input
+              type="text"
+              required
+              value={selectedChamado.equipamento}
+              onChange={(e) => setSelectedChamado({
+                ...selectedChamado,
+                equipamento: e.target.value
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Unidade
-                </label>
-                <input
-                  type="text"
-                  value={selectedChamado.unidade || ''}
-                  onChange={(e) => setSelectedChamado({
-                    ...selectedChamado,
-                    unidade: e.target.value
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Unidade do solicitante"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Unidade
+            </label>
+            <input
+              type="text"
+              value={selectedChamado.unidade || ''}
+              onChange={(e) => setSelectedChamado({
+                ...selectedChamado,
+                unidade: e.target.value
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Unidade do solicitante"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Descrição
-                </label>
-                <textarea
-                  required
-                  rows="4"
-                  value={selectedChamado.descricao}
-                  onChange={(e) => setSelectedChamado({
-                    ...selectedChamado,
-                    descricao: e.target.value
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Descrição
+            </label>
+            <textarea
+              required
+              rows="4"
+              value={selectedChamado.descricao}
+              onChange={(e) => setSelectedChamado({
+                ...selectedChamado,
+                descricao: e.target.value
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prioridade
-                </label>
-                <select
-                  value={selectedChamado.prioridade}
-                  onChange={(e) => setSelectedChamado({
-                    ...selectedChamado,
-                    prioridade: e.target.value
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="baixa">Baixa</option>
-                  <option value="media">Média</option>
-                  <option value="alta">Alta</option>
-                  <option value="emergencial">Emergencial</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Salvar Alterações
-                </button>
-              </div>
-            </form>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Prioridade
+            </label>
+            <select
+              value={selectedChamado.prioridade}
+              onChange={(e) => setSelectedChamado({
+                ...selectedChamado,
+                prioridade: e.target.value
+              })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="baixa">Baixa</option>
+              <option value="media">Média</option>
+              <option value="alta">Alta</option>
+              <option value="emergencial">Emergencial</option>
+            </select>
           </div>
         </div>
-      )}
+
+        {/* Footer - Fixo */}
+        <div className="p-6 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 bg-white">
+          <button
+            type="button"
+            onClick={() => setShowEditModal(false)}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Salvar Alterações
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
 
       {/* Modal de Exclusão */}
       {showDeleteModal && selectedChamado && (
