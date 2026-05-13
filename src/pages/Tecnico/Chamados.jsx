@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/firebase';
 import {
@@ -30,7 +29,11 @@ import {
   MapPinIcon,
   PlusCircleIcon,
   FilmIcon,
-  PlayIcon
+  PlayIcon,
+  PauseIcon,
+  BuildingStorefrontIcon,
+  TruckIcon,
+  XCircleIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
@@ -47,11 +50,17 @@ export default function TecnicoChamados() {
   // Modais
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
   const [showFinalizarModal, setShowFinalizarModal] = useState(false);
+  const [showPausaModal, setShowPausaModal] = useState(false);
+  const [showCancelarModal, setShowCancelarModal] = useState(false);
   
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [atualizacao, setAtualizacao] = useState('');
   const [fotosServico, setFotosServico] = useState([]);
   const [uploading, setUploading] = useState(false);
+  
+  const [pausaMotivo, setPausaMotivo] = useState('');
+  const [pausaTipo, setPausaTipo] = useState('');
+  const [cancelarMotivo, setCancelarMotivo] = useState('');
   
   const [finalizacao, setFinalizacao] = useState({
     descricao: '',
@@ -60,7 +69,6 @@ export default function TecnicoChamados() {
     observacoes: ''
   });
 
-  // Estado para controlar a imagem ampliada (Lightbox)
   const [imagemAmpliada, setImagemAmpliada] = useState(null);
 
   useEffect(() => {
@@ -86,14 +94,7 @@ export default function TecnicoChamados() {
     return () => unsubscribe();
   }, [userData]);
 
-  // Debug do estado da imagem
-  useEffect(() => {
-    if (imagemAmpliada) {
-      console.log('🖼️ Imagem ampliada aberta');
-    }
-  }, [imagemAmpliada]);
-
-  // Função para converter imagem para Base64
+  // Funções de imagem (mantidas iguais)
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -103,7 +104,6 @@ export default function TecnicoChamados() {
     });
   };
 
-  // Função para redimensionar imagem
   const resizeImage = (base64Str, maxWidth = 800) => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -124,6 +124,114 @@ export default function TecnicoChamados() {
         resolve(compressedBase64);
       };
     });
+  };
+
+  // Função para atualizar status com log de motivo
+  const handleUpdateStatus = async (chamadoId, newStatus, motivo = null) => {
+    try {
+      const chamadoRef = doc(db, 'chamados', chamadoId);
+      const chamado = chamados.find(c => c.id === chamadoId);
+      
+      let acaoMsg = `Status alterado para ${getStatusText(newStatus)}`;
+      
+      if (newStatus === 'em_pausa' && motivo) {
+        acaoMsg = `Chamado em PAUSA. Motivo: ${motivo}`;
+      } else if (newStatus === 'em_oficina') {
+        acaoMsg = `Equipamento enviado para OFICINA externa`;
+      } else if (newStatus === 'aguardando_pecas') {
+        acaoMsg = `Aguardando PEÇAS para continuar o serviço`;
+      } else if (newStatus === 'cancelado' && motivo) {
+        acaoMsg = `Chamado CANCELADO. Motivo: ${motivo}`;
+      }
+      
+      const updateData = {
+        status: newStatus,
+        historico: [
+          ...(chamado?.historico || []),
+          {
+            data: new Date(),
+            acao: acaoMsg,
+            usuario: userData.nome,
+            tipo: 'status',
+            ...(motivo && { motivo: motivo })
+          }
+        ]
+      };
+      
+      if (newStatus === 'em_andamento' && !chamado?.dataInicio) {
+        updateData.dataInicio = new Date();
+      }
+      
+      if (newStatus === 'concluido') {
+        updateData.dataConclusao = new Date();
+      }
+      
+      if (newStatus === 'cancelado') {
+        updateData.dataCancelamento = new Date();
+        updateData.motivoCancelamento = motivo;
+      }
+      
+      await updateDoc(chamadoRef, updateData);
+      toast.success(`Chamado ${getStatusText(newStatus)}!`);
+      
+      if (selectedChamado && selectedChamado.id === chamadoId) {
+        setSelectedChamado({ ...selectedChamado, ...updateData });
+      }
+      
+      setShowPausaModal(false);
+      setShowCancelarModal(false);
+      setPausaMotivo('');
+      setCancelarMotivo('');
+      
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast.error('Erro ao atualizar status');
+    }
+  };
+  
+  // Abrir modais
+  const openPausaModal = (chamado, tipo) => {
+    setSelectedChamado(chamado);
+    setPausaTipo(tipo);
+    setShowPausaModal(true);
+  };
+  
+  const openCancelarModal = (chamado) => {
+    setSelectedChamado(chamado);
+    setShowCancelarModal(true);
+  };
+  
+  // Confirmar ações
+  const confirmarPausa = async () => {
+    if (!pausaMotivo.trim()) {
+      toast.error('Informe o motivo da pausa');
+      return;
+    }
+    
+    let novoStatus = '';
+    switch(pausaTipo) {
+      case 'pausa':
+        novoStatus = 'em_pausa';
+        break;
+      case 'oficina':
+        novoStatus = 'em_oficina';
+        break;
+      case 'pecas':
+        novoStatus = 'aguardando_pecas';
+        break;
+      default:
+        novoStatus = 'em_pausa';
+    }
+    
+    await handleUpdateStatus(selectedChamado.id, novoStatus, pausaMotivo);
+  };
+  
+  const confirmarCancelamento = async () => {
+    if (!cancelarMotivo.trim()) {
+      toast.error('Informe o motivo do cancelamento');
+      return;
+    }
+    await handleUpdateStatus(selectedChamado.id, 'cancelado', cancelarMotivo);
   };
 
   const handleFileChange = (e) => {
@@ -153,34 +261,6 @@ export default function TecnicoChamados() {
     setFotosServico(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleUpdateStatus = async (chamadoId, newStatus) => {
-    try {
-      const chamadoRef = doc(db, 'chamados', chamadoId);
-      const chamado = chamados.find(c => c.id === chamadoId);
-      await updateDoc(chamadoRef, {
-        status: newStatus,
-        ...(newStatus === 'em_andamento' && { dataInicio: new Date() }),
-        historico: [
-          ...(chamado?.historico || []),
-          {
-            data: new Date(),
-            acao: `Status alterado para ${newStatus}`,
-            usuario: userData.nome,
-            tipo: 'status'
-          }
-        ]
-      });
-      toast.success('Status atualizado!');
-      // Atualiza o estado local para refletir imediatamente na UI
-      if (selectedChamado && selectedChamado.id === chamadoId) {
-        setSelectedChamado({ ...selectedChamado, status: newStatus });
-      }
-    } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      toast.error('Erro ao atualizar status');
-    }
-  };
-
   const handleAddAtualizacao = async (chamadoId) => {
     if (!atualizacao.trim()) {
       toast.error('Digite uma atualização');
@@ -203,7 +283,6 @@ export default function TecnicoChamados() {
       setAtualizacao('');
       toast.success('Atualização adicionada!');
       
-      // Atualiza o selecionado localmente
       if (selectedChamado && selectedChamado.id === chamadoId) {
          const novoHistorico = [
             ...(selectedChamado?.historico || []),
@@ -296,14 +375,21 @@ export default function TecnicoChamados() {
     abertos: chamados.filter(c => c.status === 'aberto').length,
     andamento: chamados.filter(c => c.status === 'em_andamento').length,
     concluidos: chamados.filter(c => c.status === 'concluido').length,
-    pendentes: chamados.filter(c => c.status === 'aberto' || c.status === 'em_andamento').length
+    pausados: chamados.filter(c => c.status === 'em_pausa').length,
+    oficina: chamados.filter(c => c.status === 'em_oficina').length,
+    aguardandoPecas: chamados.filter(c => c.status === 'aguardando_pecas').length,
+    cancelados: chamados.filter(c => c.status === 'cancelado').length
   };
 
   const getStatusColor = (status) => {
     switch(status) {
       case 'aberto': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'em_andamento': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'em_pausa': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'em_oficina': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'aguardando_pecas': return 'bg-red-100 text-red-800 border-red-200';
       case 'concluido': return 'bg-green-100 text-green-800 border-green-200';
+      case 'cancelado': return 'bg-gray-100 text-gray-800 border-gray-200';
       default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
@@ -312,7 +398,11 @@ export default function TecnicoChamados() {
     switch(status) {
       case 'aberto': return <ClockIcon className="w-4 h-4" />;
       case 'em_andamento': return <ArrowPathIcon className="w-4 h-4" />;
+      case 'em_pausa': return <PauseIcon className="w-4 h-4" />;
+      case 'em_oficina': return <BuildingStorefrontIcon className="w-4 h-4" />;
+      case 'aguardando_pecas': return <TruckIcon className="w-4 h-4" />;
       case 'concluido': return <CheckCircleIcon className="w-4 h-4" />;
+      case 'cancelado': return <XCircleIcon className="w-4 h-4" />;
       default: return null;
     }
   };
@@ -321,7 +411,11 @@ export default function TecnicoChamados() {
     switch(status) {
       case 'aberto': return 'Aberto';
       case 'em_andamento': return 'Em Andamento';
+      case 'em_pausa': return 'Em Pausa';
+      case 'em_oficina': return 'Em Oficina';
+      case 'aguardando_pecas': return 'Aguardando Peças';
       case 'concluido': return 'Concluído';
+      case 'cancelado': return 'Cancelado';
       default: return status;
     }
   };
@@ -362,64 +456,63 @@ export default function TecnicoChamados() {
     );
   }
 
-  // Adicione este componente DENTRO do seu componente TecnicoChamados (antes do return)
-const MediaViewer = ({ src, type }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const MediaViewer = ({ src, type }) => {
+    const [isOpen, setIsOpen] = useState(false);
 
-  if (!isOpen) {
+    if (!isOpen) {
+      return (
+        <div 
+          className="relative group cursor-pointer"
+          onClick={() => setIsOpen(true)}
+        >
+          {type === 'foto' ? (
+            <img
+              src={src}
+              alt="Mídia do chamado"
+              className="w-full h-24 object-cover rounded-lg"
+            />
+          ) : (
+            <div className="w-full h-24 bg-gray-800 rounded-lg flex items-center justify-center relative">
+              <FilmIcon className="w-8 h-8 text-white opacity-80" />
+              <PlayIcon className="w-4 h-4 text-white absolute bottom-1 right-1" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+            <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div 
-        className="relative group cursor-pointer"
-        onClick={() => setIsOpen(true)}
+        className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]"
+        onClick={() => setIsOpen(false)}
       >
+        <button
+          onClick={() => setIsOpen(false)}
+          className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+        >
+          <XMarkIcon className="w-8 h-8" />
+        </button>
+        
         {type === 'foto' ? (
           <img
             src={src}
-            alt="Mídia do chamado"
-            className="w-full h-24 object-cover rounded-lg"
+            alt="Mídia ampliada"
+            className="max-w-full max-h-full object-contain"
           />
         ) : (
-          <div className="w-full h-24 bg-gray-800 rounded-lg flex items-center justify-center relative">
-            <FilmIcon className="w-8 h-8 text-white opacity-80" />
-            <PlayIcon className="w-4 h-4 text-white absolute bottom-1 right-1" />
-          </div>
+          <video
+            src={src}
+            controls
+            className="max-w-full max-h-full"
+            autoPlay
+          />
         )}
-        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-          <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
-        </div>
       </div>
     );
-  }
-
-  return (
-    <div 
-      className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]"
-      onClick={() => setIsOpen(false)}
-    >
-      <button
-        onClick={() => setIsOpen(false)}
-        className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
-      >
-        <XMarkIcon className="w-8 h-8" />
-      </button>
-      
-      {type === 'foto' ? (
-        <img
-          src={src}
-          alt="Mídia ampliada"
-          className="max-w-full max-h-full object-contain"
-        />
-      ) : (
-        <video
-          src={src}
-          controls
-          className="max-w-full max-h-full"
-          autoPlay
-        />
-      )}
-    </div>
-  );
-};
+  };
 
   return (
     <div className="space-y-6">
@@ -429,15 +522,10 @@ const MediaViewer = ({ src, type }) => {
           <h1 className="text-2xl font-bold text-gray-800">Meus Chamados</h1>
           <p className="text-gray-600">Acompanhe e gerencie os chamados atribuídos a você</p>
         </div>
-        <div className="bg-blue-50 px-4 py-2 rounded-lg">
-          <span className="text-blue-700 font-medium">
-            {stats.pendentes} chamados pendentes
-          </span>
-        </div>
       </div>
 
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Total</p>
           <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
@@ -449,6 +537,18 @@ const MediaViewer = ({ src, type }) => {
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Em Andamento</p>
           <p className="text-2xl font-bold text-blue-600">{stats.andamento}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <p className="text-sm text-gray-500">Em Pausa</p>
+          <p className="text-2xl font-bold text-orange-600">{stats.pausados}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <p className="text-sm text-gray-500">Em Oficina</p>
+          <p className="text-2xl font-bold text-purple-600">{stats.oficina}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+          <p className="text-sm text-gray-500">Aguard. Peças</p>
+          <p className="text-2xl font-bold text-red-600">{stats.aguardandoPecas}</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-500">Concluídos</p>
@@ -477,7 +577,11 @@ const MediaViewer = ({ src, type }) => {
             <option value="todos">Todos os status</option>
             <option value="aberto">Abertos</option>
             <option value="em_andamento">Em Andamento</option>
+            <option value="em_pausa">Em Pausa</option>
+            <option value="em_oficina">Em Oficina</option>
+            <option value="aguardando_pecas">Aguardando Peças</option>
             <option value="concluido">Concluídos</option>
+            <option value="cancelado">Cancelados</option>
           </select>
           <select
             value={filtroPrioridade}
@@ -514,10 +618,9 @@ const MediaViewer = ({ src, type }) => {
               }}
             >
               <div className="p-6">
-                {/* Header do Card */}
                 <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <span className="text-xs text-gray-500">#{chamado.id.slice(-6)}</span>
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getStatusColor(chamado.status)}`}>
                         {getStatusIcon(chamado.status)}
@@ -530,11 +633,13 @@ const MediaViewer = ({ src, type }) => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
                     <p className="text-sm text-gray-600">{chamado.equipamento}</p>
-                     <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 bg-blue-50 inline-flex px-2 py-0.5 rounded-full">
+                    <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 bg-blue-50 inline-flex px-2 py-0.5 rounded-full">
                       <MapPinIcon className="w-3 h-3" />
                       {chamado.unidade || 'Unidade não informada'}
                     </div>
                   </div>
+                  
+                  {/* Botões de ação no card */}
                   {chamado.status === 'aberto' && (
                     <button
                       onClick={(e) => {
@@ -547,35 +652,94 @@ const MediaViewer = ({ src, type }) => {
                       Iniciar
                     </button>
                   )}
+                  
                   {chamado.status === 'em_andamento' && (
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openPausaModal(chamado, 'pausa')}
+                        className="flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 text-sm"
+                      >
+                        <PauseIcon className="w-4 h-4" />
+                        Pausar
+                      </button>
+                      <button
+                        onClick={() => openPausaModal(chamado, 'oficina')}
+                        className="flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm"
+                      >
+                        <BuildingStorefrontIcon className="w-4 h-4" />
+                        Oficina
+                      </button>
+                      <button
+                        onClick={() => openPausaModal(chamado, 'pecas')}
+                        className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
+                      >
+                        <TruckIcon className="w-4 h-4" />
+                        Peças
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedChamado(chamado);
+                          setShowFinalizarModal(true);
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm"
+                      >
+                        <CheckCircleIcon className="w-4 h-4" />
+                        Finalizar
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Botões para chamados pausados/aguardando */}
+                  {(chamado.status === 'em_pausa' || chamado.status === 'em_oficina' || chamado.status === 'aguardando_pecas') && (
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleUpdateStatus(chamado.id, 'em_andamento')}
+                        className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+                      >
+                        <ArrowPathIcon className="w-4 h-4" />
+                        Retomar
+                      </button>
+                      <button
+                        onClick={() => openCancelarModal(chamado)}
+                        className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                      >
+                        <XCircleIcon className="w-4 h-4" />
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+                  
+                  {chamado.status !== 'concluido' && chamado.status !== 'cancelado' && chamado.status !== 'aberto' && chamado.status !== 'em_andamento' && 
+                   chamado.status !== 'em_pausa' && chamado.status !== 'em_oficina' && chamado.status !== 'aguardando_pecas' && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedChamado(chamado);
-                        setShowFinalizarModal(true);
+                        openCancelarModal(chamado);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm"
+                      className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
                     >
-                      <CheckCircleIcon className="w-4 h-4" />
-                      Finalizar
+                      <XCircleIcon className="w-4 h-4" />
+                      Cancelar
                     </button>
                   )}
                 </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
-                <div className="flex items-center text-gray-600">
-                  <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
-                  <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
+                  <div className="flex items-center text-gray-600">
+                    <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <MapPinIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <span className="font-medium mr-1">Unidade:</span> {chamado.unidade || 'Não informada'}
+                  </div>
                 </div>
-                <div className="flex items-center text-gray-600">
-                  <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
-                  <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
-                </div>
-                {/* ADICIONE ESTA LINHA PARA A UNIDADE */}
-                <div className="flex items-center text-gray-600">
-                  <MapPinIcon className="w-4 h-4 text-gray-400 mr-2" />
-                  <span className="font-medium mr-1">Unidade:</span> {chamado.unidade || 'Não informada'}
-                </div>
-              </div>
+                
                 {chamado.historico && chamado.historico.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-sm text-gray-500">
@@ -592,125 +756,199 @@ const MediaViewer = ({ src, type }) => {
 
       {/* Modal Detalhes do Chamado */}
       {showDetalhesModal && selectedChamado && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-    <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-      <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Detalhes do Chamado</h2>
-          <p className="text-sm text-gray-500">#{selectedChamado.id.slice(-6)}</p>
-        </div>
-        <button
-          onClick={() => setShowDetalhesModal(false)}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          <XMarkIcon className="w-6 h-6" />
-        </button>
-      </div>
-      
-      <div className="p-6 space-y-6">
-        {/* Status e Prioridade */}
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1">
-            <p className="text-sm text-gray-500 mb-1">Status</p>
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getStatusColor(selectedChamado.status)}`}>
-                {getStatusIcon(selectedChamado.status)}
-                {getStatusText(selectedChamado.status)}
-              </span>
-              {/* Botões de ação... */}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Detalhes do Chamado</h2>
+                <p className="text-sm text-gray-500">#{selectedChamado.id.slice(-6)}</p>
+              </div>
+              <button
+                onClick={() => setShowDetalhesModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
             </div>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm text-gray-500 mb-1">Prioridade</p>
-            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getPrioridadeColor(selectedChamado.prioridade)}`}>
-              {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
-              {selectedChamado.prioridade}
-            </span>
-          </div>
-        </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Status e Prioridade */}
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500 mb-1">Status</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getStatusColor(selectedChamado.status)}`}>
+                      {getStatusIcon(selectedChamado.status)}
+                      {getStatusText(selectedChamado.status)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500 mb-1">Prioridade</p>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getPrioridadeColor(selectedChamado.prioridade)}`}>
+                    {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
+                    {selectedChamado.prioridade}
+                  </span>
+                </div>
+              </div>
 
-        {/* Informações do Chamado */}
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h3 className="font-medium text-gray-700 mb-2">Informações</h3>
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-              <p><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
-              <p><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
-              <p><span className="text-gray-500">Data de abertura:</span> {formatDate(selectedChamado.dataCriacao)}</p>
-              {selectedChamado.dataInicio && (
-                <p><span className="text-gray-500">Início do atendimento:</span> {formatDate(selectedChamado.dataInicio)}</p>
+              {/* Botões de ação no modal */}
+              <div className="flex gap-2 flex-wrap">
+                {selectedChamado.status === 'aberto' && (
+                  <button
+                    onClick={() => handleUpdateStatus(selectedChamado.id, 'em_andamento')}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <ArrowPathIcon className="w-5 h-5" />
+                    Iniciar Atendimento
+                  </button>
+                )}
+                
+                {selectedChamado.status === 'em_andamento' && (
+                  <>
+                    <button
+                      onClick={() => openPausaModal(selectedChamado, 'pausa')}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                    >
+                      <PauseIcon className="w-5 h-5" />
+                      Pausar Chamado
+                    </button>
+                    <button
+                      onClick={() => openPausaModal(selectedChamado, 'oficina')}
+                      className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    >
+                      <BuildingStorefrontIcon className="w-5 h-5" />
+                      Enviar para Oficina
+                    </button>
+                    <button
+                      onClick={() => openPausaModal(selectedChamado, 'pecas')}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    >
+                      <TruckIcon className="w-5 h-5" />
+                      Aguardar Peças
+                    </button>
+                    <button
+                      onClick={() => setShowFinalizarModal(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      <CheckCircleIcon className="w-5 h-5" />
+                      Finalizar Chamado
+                    </button>
+                  </>
+                )}
+                
+                {(selectedChamado.status === 'em_pausa' || selectedChamado.status === 'em_oficina' || selectedChamado.status === 'aguardando_pecas') && (
+                  <>
+                    <button
+                      onClick={() => handleUpdateStatus(selectedChamado.id, 'em_andamento')}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <ArrowPathIcon className="w-5 h-5" />
+                      Retomar Atendimento
+                    </button>
+                    <button
+                      onClick={() => openCancelarModal(selectedChamado)}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                    >
+                      <XCircleIcon className="w-5 h-5" />
+                      Cancelar Chamado
+                    </button>
+                  </>
+                )}
+                
+                {selectedChamado.status !== 'concluido' && selectedChamado.status !== 'cancelado' && 
+                 selectedChamado.status !== 'aberto' && selectedChamado.status !== 'em_andamento' &&
+                 selectedChamado.status !== 'em_pausa' && selectedChamado.status !== 'em_oficina' && 
+                 selectedChamado.status !== 'aguardando_pecas' && (
+                  <button
+                    onClick={() => openCancelarModal(selectedChamado)}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    <XCircleIcon className="w-5 h-5" />
+                    Cancelar Chamado
+                  </button>
+                )}
+              </div>
+
+              {/* Informações do Chamado */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Informações</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                    <p><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
+                    <p><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
+                    <p><span className="text-gray-500">Data de abertura:</span> {formatDate(selectedChamado.dataCriacao)}</p>
+                    {selectedChamado.dataInicio && (
+                      <p><span className="text-gray-500">Início do atendimento:</span> {formatDate(selectedChamado.dataInicio)}</p>
+                    )}
+                    {selectedChamado.dataCancelamento && (
+                      <p><span className="text-gray-500">Data cancelamento:</span> {formatDate(selectedChamado.dataCancelamento)}</p>
+                    )}
+                    {selectedChamado.motivoCancelamento && (
+                      <p><span className="text-gray-500">Motivo cancelamento:</span> {selectedChamado.motivoCancelamento}</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Solicitante</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                    <p><span className="text-gray-500">Nome:</span> {selectedChamado.solicitanteNome}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Unidade */}
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <MapPinIcon className="w-5 h-5 text-gray-400" />
+                    <p className="text-gray-700">
+                      {selectedChamado.unidade || 'Unidade não informada'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Descrição do Problema */}
+              <div>
+                <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.descricao}</p>
+                </div>
+              </div>
+
+              {/* Fotos do Problema */}
+              {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Fotos do Problema</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    {selectedChamado.fotos.map((foto, index) => {
+                      const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
+                      const imageSrc = isBase64 ? foto : foto;
+                      return (
+                        <MediaViewer key={index} src={imageSrc} type="foto" />
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-700 mb-2">Solicitante</h3>
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-              <p><span className="text-gray-500">Nome:</span> {selectedChamado.solicitanteNome}</p>
-            </div>
-          </div>
-        </div>
 
-        {/* UNIDADE - Corrigido e posicionado corretamente */}
-        <div>
-          <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <div className="flex items-center gap-2">
-              <MapPinIcon className="w-5 h-5 text-gray-400" />
-              <p className="text-gray-700">
-                {selectedChamado.unidade || 'Unidade não informada'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Descrição do Problema */}
-        <div>
-          <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.descricao}</p>
-          </div>
-        </div>
-
-
-            {/* Fotos do Problema */}
-{selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
-  <div>
-    <h3 className="font-medium text-gray-700 mb-2">Fotos do Problema</h3>
-    <div className="grid grid-cols-4 gap-4">
-      {selectedChamado.fotos.map((foto, index) => {
-        const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
-        const imageSrc = isBase64 ? foto : foto;
-        
-        return (
-          <MediaViewer 
-            key={index} 
-            src={imageSrc} 
-            type="foto" 
-          />
-        );
-      })}
-    </div>
-  </div>
-)}
-
-{/* Vídeos do Problema */}
-{selectedChamado.videos && selectedChamado.videos.length > 0 && (
-  <div>
-    <h3 className="font-medium text-gray-700 mb-2">Vídeos do Problema</h3>
-    <div className="grid grid-cols-4 gap-4">
-      {selectedChamado.videos.map((video, index) => {
-        const videoSrc = typeof video === 'object' && video.data ? video.data : video;
-        return (
-          <MediaViewer 
-            key={index} 
-            src={videoSrc} 
-            type="video" 
-          />
-        );
-      })}
-    </div>
-  </div>
-)}
+              {/* Vídeos do Problema */}
+              {selectedChamado.videos && selectedChamado.videos.length > 0 && (
+                <div>
+                  <h3 className="font-medium text-gray-700 mb-2">Vídeos do Problema</h3>
+                  <div className="grid grid-cols-4 gap-4">
+                    {selectedChamado.videos.map((video, index) => {
+                      const videoSrc = typeof video === 'object' && video.data ? video.data : video;
+                      return (
+                        <MediaViewer key={index} src={videoSrc} type="video" />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
               {/* Serviço Realizado (se concluído) */}
               {selectedChamado.servicoRealizado && (
                 <div>
@@ -726,7 +964,6 @@ const MediaViewer = ({ src, type }) => {
                     {selectedChamado.servicoRealizado.observacoes && (
                       <p><span className="font-medium">Observações:</span> {selectedChamado.servicoRealizado.observacoes}</p>
                     )}
-                    {/* Fotos do Serviço Realizado */}
                     {selectedChamado.servicoRealizado.fotos && selectedChamado.servicoRealizado.fotos.length > 0 && (
                       <div className="mt-3">
                         <p className="font-medium mb-2">Fotos do Serviço:</p>
@@ -761,7 +998,7 @@ const MediaViewer = ({ src, type }) => {
                 </div>
               )}
 
-              {/* Avaliação (se houver) */}
+              {/* Avaliação */}
               {selectedChamado.avaliacao && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Avaliação do Cliente</h3>
@@ -803,6 +1040,9 @@ const MediaViewer = ({ src, type }) => {
                             </span>
                           </div>
                           <p className="text-sm text-gray-600 ml-6">{item.acao}</p>
+                          {item.motivo && (
+                            <p className="text-xs text-orange-600 ml-6 mt-1">Motivo: {item.motivo}</p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -812,8 +1052,8 @@ const MediaViewer = ({ src, type }) => {
                 </div>
               </div>
 
-              {/* Adicionar Atualização (apenas se não concluído) */}
-              {selectedChamado.status !== 'concluido' && (
+              {/* Adicionar Atualização */}
+              {selectedChamado.status !== 'concluido' && selectedChamado.status !== 'cancelado' && (
                 <div>
                   <h3 className="font-medium text-gray-700 mb-2">Adicionar Atualização</h3>
                   <div className="flex gap-2">
@@ -1018,16 +1258,132 @@ const MediaViewer = ({ src, type }) => {
         </div>
       )}
 
-      {/* Modal de Imagem Ampliada (CORRIGIDO) */}
+      {/* Modal de Pausa/Oficina/Peças */}
+      {showPausaModal && selectedChamado && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">
+                {pausaTipo === 'pausa' && 'Pausar Chamado'}
+                {pausaTipo === 'oficina' && 'Enviar para Oficina'}
+                {pausaTipo === 'pecas' && 'Aguardar Peças'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowPausaModal(false);
+                  setPausaMotivo('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Chamado: <strong>{selectedChamado.titulo}</strong>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Motivo *
+                </label>
+                <textarea
+                  rows="3"
+                  value={pausaMotivo}
+                  onChange={(e) => setPausaMotivo(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder={
+                    pausaTipo === 'pausa' ? "Ex: Aguardando autorização do cliente, problema complexo..." :
+                    pausaTipo === 'oficina' ? "Ex: Necessita de ferramenta especializada, serviço terceirizado..." :
+                    "Ex: Peça em falta no estoque, aguardando entrega..."
+                  }
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowPausaModal(false);
+                    setPausaMotivo('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarPausa}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cancelamento */}
+      {showCancelarModal && selectedChamado && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">Cancelar Chamado</h2>
+              <button
+                onClick={() => {
+                  setShowCancelarModal(false);
+                  setCancelarMotivo('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+ Tem certeza que deseja cancelar o chamado: <strong>{selectedChamado.titulo}</strong>?
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Motivo do Cancelamento *
+                </label>
+                <textarea
+                  rows="3"
+                  value={cancelarMotivo}
+                  onChange={(e) => setCancelarMotivo(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ex: Cliente desistiu, problema resolvido por terceiros, equipamento obsoleto..."
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowCancelarModal(false);
+                    setCancelarMotivo('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={confirmarCancelamento}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Confirmar Cancelamento
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Imagem Ampliada */}
       {imagemAmpliada && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/95 transition-opacity duration-300"
-          style={{ zIndex: 9999 }} // Garante que fique acima de tudo
+          style={{ zIndex: 9999 }}
           onClick={() => setImagemAmpliada(null)}
         >
           <div
             className="relative max-w-[95vw] max-h-[95vh] flex items-center justify-center p-4"
-            onClick={(e) => e.stopPropagation()} // Impede fechar ao clicar na imagem
+            onClick={(e) => e.stopPropagation()}
           >
             <img
               src={imagemAmpliada}

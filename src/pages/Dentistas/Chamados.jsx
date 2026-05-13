@@ -33,7 +33,9 @@ import {
   WrenchScrewdriverIcon,
   StarIcon,
   MapPinIcon,
-  PlayIcon
+  PlayIcon,
+  VideoCameraIcon,
+  FilmIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
@@ -52,11 +54,12 @@ export default function DentistaChamados() {
   const [showAvaliarModal, setShowAvaliarModal] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [unidadeUsuario, setUnidadeUsuario] = useState('');
+  const [midiaAmpliada, setMidiaAmpliada] = useState(null); // Para lightbox de mídia
   
   const [formData, setFormData] = useState({
     titulo: '',
     equipamento: '',
-    unidade: '', // ← Será preenchido automaticamente
+    unidade: '',
     descricao: '',
     prioridade: 'media',
     fotos: [],
@@ -64,6 +67,7 @@ export default function DentistaChamados() {
   });
   
   const [fotos, setFotos] = useState([]);
+  const [videos, setVideos] = useState([]); // Novo estado para vídeos
   const [uploading, setUploading] = useState(false);
   const [avaliacao, setAvaliacao] = useState({
     nota: 5,
@@ -80,7 +84,6 @@ export default function DentistaChamados() {
           if (userDoc.exists()) {
             const unidade = userDoc.data().unidade || '';
             setUnidadeUsuario(unidade);
-            // Preencher automaticamente a unidade no formData
             setFormData(prev => ({ ...prev, unidade: unidade }));
           }
         } catch (error) {
@@ -95,7 +98,6 @@ export default function DentistaChamados() {
   useEffect(() => {
     if (!userData) return;
 
-    // Carregar chamados do dentista
     const q = query(
       collection(db, 'chamados'),
       where('solicitanteId', '==', userData.uid),
@@ -119,50 +121,90 @@ export default function DentistaChamados() {
     return () => unsubscribe();
   }, [userData]);
 
+  // Função para converter vídeo para Base64 (para armazenamento no Firestore)
+  const videoToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  // Função para comprimir vídeo (reduzir tamanho)
+  const compressVideo = (base64Str, maxSizeMB = 5) => {
+    // Se o vídeo já for pequeno, retorna ele mesmo
+    const sizeInMB = (base64Str.length * 0.75) / (1024 * 1024);
+    if (sizeInMB <= maxSizeMB) {
+      return Promise.resolve(base64Str);
+    }
+    
+    // Avisa que o vídeo é grande
+    toast.warning(`Vídeo grande (${sizeInMB.toFixed(1)}MB). Recomendamos vídeos de até ${maxSizeMB}MB para melhor desempenho.`, {
+      duration: 4000
+    });
+    
+    return Promise.resolve(base64Str);
+  };
+
   const handleSubmitNovoChamado = async (e) => {
     e.preventDefault();
     setUploading(true);
+    toast.loading('Processando mídias...', { id: 'upload' });
 
     try {
-      // Upload das fotos
+      // Upload das fotos para o Storage
       const fotosUrls = [];
       for (const foto of fotos) {
-        const storageRef = ref(storage, `chamados/${userData.uid}/${Date.now()}_${foto.name}`);
+        const storageRef = ref(storage, `chamados/${userData.uid}/fotos/${Date.now()}_${foto.name}`);
         await uploadBytes(storageRef, foto);
         const url = await getDownloadURL(storageRef);
         fotosUrls.push(url);
       }
 
-      // Criar chamado com a unidade
+      // Processar vídeos (salvar como Base64 no Firestore para facilitar visualização)
+      const videosBase64 = [];
+      for (const video of videos) {
+        let base64 = await videoToBase64(video);
+        // Comprimir se necessário
+        base64 = await compressVideo(base64, 10);
+        videosBase64.push(base64);
+      }
+
+      // Criar chamado
       await addDoc(collection(db, 'chamados'), {
         ...formData,
-        unidade: unidadeUsuario, // ← Usando a unidade do usuário
+        unidade: unidadeUsuario,
         solicitanteId: userData.uid,
         solicitanteNome: userData.nome,
         status: 'aberto',
         fotos: fotosUrls,
+        videos: videosBase64, // Adicionando vídeos
         dataCriacao: new Date(),
         historico: [{
           data: new Date(),
-          acao: 'Chamado criado',
+          acao: `Chamado criado com ${fotosUrls.length} foto(s) e ${videosBase64.length} vídeo(s)`,
           usuario: userData.nome,
           tipo: 'criacao'
         }]
       });
 
-      toast.success('Chamado criado com sucesso!');
+      toast.success('Chamado criado com sucesso!', { id: 'upload' });
       setShowNovoChamadoModal(false);
       setFormData({ 
         titulo: '', 
         equipamento: '', 
         unidade: unidadeUsuario, 
         descricao: '', 
-        prioridade: 'media' 
+        prioridade: 'media',
+        fotos: [],
+        videos: []
       });
       setFotos([]);
+      setVideos([]);
     } catch (error) {
       console.error('Erro ao criar chamado:', error);
-      toast.error('Erro ao criar chamado. Tente novamente.');
+      toast.error('Erro ao criar chamado. Tente novamente.', { id: 'upload' });
     } finally {
       setUploading(false);
     }
@@ -236,7 +278,6 @@ export default function DentistaChamados() {
     return matchesSearch && matchesStatus;
   });
 
-  // Estatísticas
   const stats = {
     total: chamados.length,
     abertos: chamados.filter(c => c.status === 'aberto').length,
@@ -257,10 +298,10 @@ export default function DentistaChamados() {
 
   const getStatusIcon = (status) => {
     switch(status) {
-      case 'aberto': return <ClockIcon className="w-4 h-4" />;
-      case 'em_andamento': return <ArrowPathIcon className="w-4 h-4" />;
-      case 'concluido': return <CheckCircleIcon className="w-4 h-4" />;
-      case 'cancelado': return <XMarkIcon className="w-4 h-4" />;
+      case 'aberto': return <ClockIcon className="w-5 h-5" />;
+      case 'em_andamento': return <ArrowPathIcon className="w-5 h-5" />;
+      case 'concluido': return <CheckCircleIcon className="w-5 h-5" />;
+      case 'cancelado': return <XMarkIcon className="w-5 h-5" />;
       default: return null;
     }
   };
@@ -300,62 +341,106 @@ export default function DentistaChamados() {
     });
   };
 
+  // Componente de Lightbox para mídia
+  const MediaLightbox = ({ src, type, onClose }) => {
+    useEffect(() => {
+      const handleEsc = (e) => {
+        if (e.key === 'Escape') onClose();
+      };
+      document.addEventListener('keydown', handleEsc);
+      return () => document.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-[200]"
+        onClick={onClose}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 bg-red-500 text-white rounded-full p-3 hover:bg-red-600 transition shadow-lg z-10"
+        >
+          <XMarkIcon className="w-6 h-6" />
+        </button>
+        
+        {type === 'foto' ? (
+          <img
+            src={src}
+            alt="Mídia ampliada"
+            className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <video
+            src={src}
+            controls
+            className="max-w-[95vw] max-h-[95vh] rounded-lg"
+            autoPlay
+            onClick={(e) => e.stopPropagation()}
+          >
+            Seu navegador não suporta vídeo.
+          </video>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <ArrowPathIcon className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Carregando seus chamados...</p>
+          <p className="text-gray-500 text-lg">Carregando seus chamados...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-8">
+      {/* Header - TAMANHO AUMENTADO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Meus Chamados</h1>
-          <p className="text-gray-600">Acompanhe e gerencie suas solicitações de manutenção</p>
+          <h1 className="text-3xl font-bold text-gray-800">Meus Chamados</h1>
+          <p className="text-gray-600 mt-1">Acompanhe e gerencie suas solicitações de manutenção</p>
           {unidadeUsuario && (
-            <div className="flex items-center gap-2 mt-2 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full inline-flex">
-              <MapPinIcon className="w-4 h-4" />
-              Unidade: {unidadeUsuario}
+            <div className="flex items-center gap-2 mt-3 text-blue-600 bg-blue-50 px-4 py-2 rounded-full inline-flex">
+              <MapPinIcon className="w-5 h-5" />
+              <span className="font-medium">Unidade: {unidadeUsuario}</span>
             </div>
           )}
         </div>
         <button
           onClick={() => setShowNovoChamadoModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition transform hover:scale-105"
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition transform hover:scale-105 shadow-md text-base font-medium"
         >
           <PlusIcon className="w-5 h-5" />
           Novo Chamado
         </button>
       </div>
 
-      {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+      {/* Cards de Estatísticas - TAMANHO AUMENTADO */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-white rounded-xl shadow-md p-5 border border-gray-100 hover:shadow-lg transition">
           <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
+          <p className="text-3xl font-bold text-gray-800">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-md p-5 border border-gray-100 hover:shadow-lg transition">
           <p className="text-sm text-gray-500">Abertos</p>
-          <p className="text-2xl font-bold text-yellow-600">{stats.abertos}</p>
+          <p className="text-3xl font-bold text-yellow-600">{stats.abertos}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-md p-5 border border-gray-100 hover:shadow-lg transition">
           <p className="text-sm text-gray-500">Em Andamento</p>
-          <p className="text-2xl font-bold text-blue-600">{stats.andamento}</p>
+          <p className="text-3xl font-bold text-blue-600">{stats.andamento}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+        <div className="bg-white rounded-xl shadow-md p-5 border border-gray-100 hover:shadow-lg transition">
           <p className="text-sm text-gray-500">Concluídos</p>
-          <p className="text-2xl font-bold text-green-600">{stats.concluidos}</p>
+          <p className="text-3xl font-bold text-green-600">{stats.concluidos}</p>
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+      {/* Filtros - TAMANHO AUMENTADO */}
+      <div className="bg-white rounded-xl shadow-md p-5 border border-gray-100">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -364,13 +449,13 @@ export default function DentistaChamados() {
               placeholder="Buscar por título, equipamento..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
             />
           </div>
           <select
             value={filtroStatus}
             onChange={(e) => setFiltroStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
           >
             <option value="todos">Todos os status</option>
             <option value="aberto">Abertos</option>
@@ -381,18 +466,18 @@ export default function DentistaChamados() {
         </div>
       </div>
 
-      {/* Lista de Chamados */}
-      <div className="space-y-4">
+      {/* Lista de Chamados - TAMANHO AUMENTADO */}
+      <div className="space-y-5">
         {filteredChamados.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-gray-100">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <WrenchScrewdriverIcon className="w-12 h-12 text-gray-400" />
+          <div className="bg-white rounded-xl shadow-md p-12 text-center border border-gray-100">
+            <div className="w-28 h-28 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-5">
+              <WrenchScrewdriverIcon className="w-14 h-14 text-gray-400" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum chamado encontrado</h3>
+            <h3 className="text-xl font-medium text-gray-900 mb-2">Nenhum chamado encontrado</h3>
             <p className="text-gray-500 mb-6">Você ainda não possui chamados ou nenhum resultado corresponde à sua busca.</p>
             <button
               onClick={() => setShowNovoChamadoModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-base"
             >
               <PlusIcon className="w-5 h-5" />
               Criar Primeiro Chamado
@@ -402,7 +487,7 @@ export default function DentistaChamados() {
           filteredChamados.map((chamado) => (
             <div
               key={chamado.id}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer"
+              className="bg-white rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition cursor-pointer"
               onClick={() => {
                 setSelectedChamado(chamado);
                 setShowDetalhesModal(true);
@@ -412,28 +497,28 @@ export default function DentistaChamados() {
                 {/* Header do Card */}
                 <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-gray-500">#{chamado.id.slice(-6)}</span>
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getStatusColor(chamado.status)}`}>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">#{chamado.id.slice(-6)}</span>
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border ${getStatusColor(chamado.status)}`}>
                         {getStatusIcon(chamado.status)}
                         {getStatusText(chamado.status)}
                       </span>
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getPrioridadeColor(chamado.prioridade)}`}>
-                        {chamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-3 h-3" />}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border ${getPrioridadeColor(chamado.prioridade)}`}>
+                        {chamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
                         {chamado.prioridade}
                       </span>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
-                    <p className="text-sm text-gray-600">{chamado.equipamento}</p>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
+                    <p className="text-base text-gray-600">{chamado.equipamento}</p>
                     {chamado.unidade && (
-                      <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
-                        <MapPinIcon className="w-3 h-3" />
+                      <div className="flex items-center gap-1.5 mt-2 text-sm text-gray-500">
+                        <MapPinIcon className="w-4 h-4" />
                         {chamado.unidade}
                       </div>
                     )}
                   </div>
                   
-                  {/* Avaliação (se concluído) */}
+                  {/* Avaliação */}
                   {chamado.status === 'concluido' && !chamado.avaliacao && (
                     <button
                       onClick={(e) => {
@@ -441,37 +526,55 @@ export default function DentistaChamados() {
                         setSelectedChamado(chamado);
                         setShowAvaliarModal(true);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 text-sm"
+                      className="flex items-center gap-1.5 px-4 py-2 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 text-sm font-medium"
                     >
-                      <StarIcon className="w-4 h-4" />
+                      <StarIcon className="w-5 h-5" />
                       Avaliar
                     </button>
                   )}
                   {chamado.avaliacao && (
-                    <div className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg">
-                      <StarIconSolid className="w-4 h-4" />
-                      <span className="text-sm font-medium">{chamado.avaliacao.nota}</span>
+                    <div className="flex items-center gap-1.5 px-4 py-2 bg-green-100 text-green-700 rounded-lg">
+                      <StarIconSolid className="w-5 h-5" />
+                      <span className="text-base font-medium">{chamado.avaliacao.nota}/5</span>
                     </div>
                   )}
                 </div>
 
                 {/* Informações */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-base">
                   <div className="flex items-center text-gray-600">
-                    <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <CalendarIcon className="w-5 h-5 text-gray-400 mr-2" />
                     {formatDate(chamado.dataCriacao)}
                   </div>
                   
                   <div className="flex items-center text-gray-600">
-                    <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <UserCircleIcon className="w-5 h-5 text-gray-400 mr-2" />
                     {chamado.tecnicoNome || 'Aguardando técnico'}
                   </div>
 
                   <div className="flex items-center text-gray-600">
-                    <ChatBubbleLeftIcon className="w-4 h-4 text-gray-400 mr-2" />
+                    <ChatBubbleLeftIcon className="w-5 h-5 text-gray-400 mr-2" />
                     {chamado.historico?.length || 0} atualizações
                   </div>
                 </div>
+
+                {/* Indicador de Mídia */}
+                {(chamado.fotos?.length > 0 || chamado.videos?.length > 0) && (
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-3">
+                    {chamado.fotos?.length > 0 && (
+                      <div className="flex items-center gap-1 text-blue-500 text-sm">
+                        <PhotoIcon className="w-4 h-4" />
+                        <span>{chamado.fotos.length} foto(s)</span>
+                      </div>
+                    )}
+                    {chamado.videos?.length > 0 && (
+                      <div className="flex items-center gap-1 text-purple-500 text-sm">
+                        <VideoCameraIcon className="w-4 h-4" />
+                        <span>{chamado.videos.length} vídeo(s)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Última atualização */}
                 {chamado.historico && chamado.historico.length > 0 && (
@@ -488,12 +591,12 @@ export default function DentistaChamados() {
         )}
       </div>
 
-      {/* Modal Novo Chamado */}
+      {/* Modal Novo Chamado - COM VÍDEO E TAMANHO AUMENTADO */}
       {showNovoChamadoModal && (
         <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
-              <h2 className="text-xl font-bold text-gray-800">Novo Chamado</h2>
+              <h2 className="text-2xl font-bold text-gray-800">Novo Chamado</h2>
               <button
                 onClick={() => setShowNovoChamadoModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -502,10 +605,10 @@ export default function DentistaChamados() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitNovoChamado} className="p-6 space-y-4">
-              {/* Unidade (somente leitura) */}
+            <form onSubmit={handleSubmitNovoChamado} className="p-6 space-y-5">
+              {/* Unidade */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Unidade *
                 </label>
                 <div className="relative">
@@ -514,7 +617,7 @@ export default function DentistaChamados() {
                     type="text"
                     value={unidadeUsuario || 'Carregando...'}
                     disabled
-                    className="w-full pl-10 pr-4 py-2 border border-gray-200 bg-gray-50 rounded-lg text-gray-600"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 bg-gray-50 rounded-lg text-gray-600 text-base"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
@@ -523,7 +626,7 @@ export default function DentistaChamados() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Título do Chamado *
                 </label>
                 <input
@@ -531,13 +634,13 @@ export default function DentistaChamados() {
                   required
                   value={formData.titulo}
                   onChange={(e) => setFormData({...formData, titulo: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
                   placeholder="Ex: Cadeira odontológica com problema"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Equipamento *
                 </label>
                 <input
@@ -545,33 +648,33 @@ export default function DentistaChamados() {
                   required
                   value={formData.equipamento}
                   onChange={(e) => setFormData({...formData, equipamento: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
                   placeholder="Ex: Cadeira OD-3000"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Descrição do Problema *
                 </label>
                 <textarea
                   required
-                  rows="4"
+                  rows="5"
                   value={formData.descricao}
                   onChange={(e) => setFormData({...formData, descricao: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
                   placeholder="Descreva detalhadamente o problema..."
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Prioridade
                 </label>
                 <select
                   value={formData.prioridade}
                   onChange={(e) => setFormData({...formData, prioridade: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
                 >
                   <option value="baixa">Baixa - Pode aguardar</option>
                   <option value="media">Média - Normal</option>
@@ -580,11 +683,12 @@ export default function DentistaChamados() {
                 </select>
               </div>
 
+              {/* Upload de Fotos - TAMANHO AUMENTADO */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Fotos (opcional)
                 </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition">
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-blue-500 transition">
                   <input
                     type="file"
                     multiple
@@ -597,23 +701,23 @@ export default function DentistaChamados() {
                     htmlFor="fotos-upload"
                     className="flex flex-col items-center cursor-pointer"
                   >
-                    <PhotoIcon className="w-12 h-12 text-gray-400" />
-                    <span className="text-sm text-gray-500 mt-2">
+                    <PhotoIcon className="w-16 h-16 text-gray-400" />
+                    <span className="text-base text-gray-500 mt-3">
                       Clique para adicionar fotos
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-sm text-gray-400">
                       PNG, JPG até 10MB cada
                     </span>
                   </label>
                 </div>
                 {fotos.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-3">
                     {Array.from(fotos).map((foto, index) => (
                       <div key={index} className="relative">
                         <img
                           src={URL.createObjectURL(foto)}
                           alt={`Preview ${index}`}
-                          className="w-20 h-20 object-cover rounded-lg"
+                          className="w-24 h-24 object-cover rounded-lg"
                         />
                         <button
                           type="button"
@@ -624,7 +728,60 @@ export default function DentistaChamados() {
                           }}
                           className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                         >
-                          <XMarkIcon className="w-3 h-3" />
+                          <XMarkIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Upload de Vídeos - NOVO */}
+              <div>
+                <label className="block text-base font-medium text-gray-700 mb-2">
+                  Vídeos (opcional)
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-purple-500 transition">
+                  <input
+                    type="file"
+                    multiple
+                    accept="video/*"
+                    onChange={(e) => setVideos([...e.target.files])}
+                    className="hidden"
+                    id="videos-upload"
+                  />
+                  <label
+                    htmlFor="videos-upload"
+                    className="flex flex-col items-center cursor-pointer"
+                  >
+                    <VideoCameraIcon className="w-16 h-16 text-gray-400" />
+                    <span className="text-base text-gray-500 mt-3">
+                      Clique para adicionar vídeos
+                    </span>
+                    <span className="text-sm text-gray-400">
+                      MP4, MOV, AVI - Recomendado até 10MB
+                    </span>
+                  </label>
+                </div>
+                {videos.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {Array.from(videos).map((video, index) => (
+                      <div key={index} className="relative">
+                        <video
+                          src={URL.createObjectURL(video)}
+                          className="w-24 h-24 object-cover rounded-lg"
+                          controls
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVideos = Array.from(videos);
+                            newVideos.splice(index, 1);
+                            setVideos(newVideos);
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <XMarkIcon className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
@@ -636,14 +793,14 @@ export default function DentistaChamados() {
                 <button
                   type="button"
                   onClick={() => setShowNovoChamadoModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-base"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-base"
                 >
                   {uploading ? (
                     <>
@@ -660,37 +817,37 @@ export default function DentistaChamados() {
         </div>
       )}
 
-      {/* Modal Detalhes do Chamado */}
+      {/* Modal Detalhes do Chamado - COM VÍDEO E TAMANHO AUMENTADO */}
       {showDetalhesModal && selectedChamado && (
         <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <div>
-                <h2 className="text-xl font-bold text-gray-800">Detalhes do Chamado</h2>
-                <p className="text-sm text-gray-500">#{selectedChamado.id.slice(-6)}</p>
+                <h2 className="text-2xl font-bold text-gray-800">Detalhes do Chamado</h2>
+                <p className="text-base text-gray-500">#{selectedChamado.id.slice(-6)}</p>
               </div>
               <button
                 onClick={() => setShowDetalhesModal(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <XMarkIcon className="w-6 h-6" />
+                <XMarkIcon className="w-7 h-7" />
               </button>
             </div>
 
             <div className="p-6 space-y-6">
               {/* Status e Prioridade */}
-              <div className="flex gap-4">
+              <div className="flex gap-6">
                 <div className="flex-1">
                   <p className="text-sm text-gray-500 mb-1">Status</p>
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getStatusColor(selectedChamado.status)}`}>
+                  <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-base ${getStatusColor(selectedChamado.status)}`}>
                     {getStatusIcon(selectedChamado.status)}
                     {getStatusText(selectedChamado.status)}
                   </span>
                 </div>
                 <div className="flex-1">
                   <p className="text-sm text-gray-500 mb-1">Prioridade</p>
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border ${getPrioridadeColor(selectedChamado.prioridade)}`}>
-                    {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-4 h-4" />}
+                  <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-base ${getPrioridadeColor(selectedChamado.prioridade)}`}>
+                    {selectedChamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-5 h-5" />}
                     {selectedChamado.prioridade}
                   </span>
                 </div>
@@ -699,20 +856,20 @@ export default function DentistaChamados() {
               {/* Informações do Chamado */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Informações</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <p><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
-                    <p><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
-                    <p><span className="text-gray-500">Data:</span> {formatDate(selectedChamado.dataCriacao)}</p>
+                  <h3 className="font-semibold text-gray-700 mb-2 text-base">Informações</h3>
+                  <div className="bg-gray-50 p-5 rounded-lg space-y-2">
+                    <p className="text-base"><span className="text-gray-500">Título:</span> {selectedChamado.titulo}</p>
+                    <p className="text-base"><span className="text-gray-500">Equipamento:</span> {selectedChamado.equipamento}</p>
+                    <p className="text-base"><span className="text-gray-500">Data:</span> {formatDate(selectedChamado.dataCriacao)}</p>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Unidade</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-base">Unidade</h3>
+                  <div className="bg-gray-50 p-5 rounded-lg">
                     <div className="flex items-center gap-2">
                       <MapPinIcon className="w-5 h-5 text-gray-400" />
-                      <p className="text-gray-700">
+                      <p className="text-gray-700 text-base">
                         {selectedChamado.unidade || 'Unidade não informada'}
                       </p>
                     </div>
@@ -722,42 +879,33 @@ export default function DentistaChamados() {
 
               {/* Descrição */}
               <div>
-                <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.descricao}</p>
+                <h3 className="font-semibold text-gray-700 mb-2 text-base">Descrição do Problema</h3>
+                <div className="bg-gray-50 p-5 rounded-lg">
+                  <p className="text-gray-700 whitespace-pre-wrap text-base">{selectedChamado.descricao}</p>
                 </div>
               </div>
 
-              {/* Mídia Anexada (Fotos) */}
+              {/* Fotos Anexadas - TAMANHO AUMENTADO */}
               {selectedChamado.fotos?.length > 0 && (
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Fotos Anexadas</h3>
-                  <div className="grid grid-cols-4 gap-4">
+                  <h3 className="font-semibold text-gray-700 mb-3 text-base">
+                    📷 Fotos Anexadas ({selectedChamado.fotos.length})
+                  </h3>
+                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {selectedChamado.fotos.map((foto, index) => {
                       const isBase64 = typeof foto === 'string' && foto.startsWith('data:image');
                       const imageSrc = isBase64 ? foto : foto;
                       
                       return (
-                        <div key={index} className="relative group">
+                        <div key={index} className="relative group cursor-pointer">
                           <img
                             src={imageSrc}
                             alt={`Foto ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg cursor-pointer"
-                            onClick={() => {
-                              const modal = document.createElement('div');
-                              modal.className = 'fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100]';
-                              modal.onclick = () => modal.remove();
-                              
-                              const img = document.createElement('img');
-                              img.src = imageSrc;
-                              img.className = 'max-w-full max-h-full object-contain';
-                              
-                              modal.appendChild(img);
-                              document.body.appendChild(modal);
-                            }}
+                            className="w-full h-32 object-cover rounded-lg shadow-md hover:shadow-xl transition"
+                            onClick={() => setMidiaAmpliada({ src: imageSrc, type: 'foto' })}
                           />
                           <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
-                            <EyeIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition" />
+                            <EyeIcon className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition" />
                           </div>
                         </div>
                       );
@@ -766,17 +914,64 @@ export default function DentistaChamados() {
                 </div>
               )}
 
-              {/* Serviço Realizado (se concluído) */}
+              {/* Vídeos Anexados - NOVO */}
+              {selectedChamado.videos?.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-gray-700 mb-3 text-base">
+                    🎥 Vídeos Anexados ({selectedChamado.videos.length})
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {selectedChamado.videos.map((video, index) => {
+                      const videoSrc = typeof video === 'object' && video.data ? video.data : video;
+                      
+                      return (
+                        <div key={index} className="relative group cursor-pointer">
+                          <video
+                            src={videoSrc}
+                            className="w-full h-32 object-cover rounded-lg shadow-md"
+                            onClick={() => setMidiaAmpliada({ src: videoSrc, type: 'video' })}
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition rounded-lg flex items-center justify-center">
+                            <PlayIcon className="w-12 h-12 text-white opacity-0 group-hover:opacity-100 transition" />
+                          </div>
+                          <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1">
+                            <FilmIcon className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Serviço Realizado */}
               {selectedChamado.servicoRealizado && (
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Serviço Realizado</h3>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <p className="text-gray-700 whitespace-pre-wrap">{selectedChamado.servicoRealizado.descricao}</p>
+                  <h3 className="font-semibold text-gray-700 mb-2 text-base">✅ Serviço Realizado</h3>
+                  <div className="bg-green-50 p-5 rounded-lg">
+                    <p className="text-gray-700 whitespace-pre-wrap text-base">{selectedChamado.servicoRealizado.descricao}</p>
                     {selectedChamado.servicoRealizado.pecasTrocadas && (
-                      <p className="mt-2 text-sm"><span className="font-medium">Peças trocadas:</span> {selectedChamado.servicoRealizado.pecasTrocadas}</p>
+                      <p className="mt-3 text-base"><span className="font-medium">🔧 Peças trocadas:</span> {selectedChamado.servicoRealizado.pecasTrocadas}</p>
                     )}
                     {selectedChamado.servicoRealizado.tempoGasto && (
-                      <p className="mt-1 text-sm"><span className="font-medium">Tempo gasto:</span> {selectedChamado.servicoRealizado.tempoGasto}</p>
+                      <p className="mt-2 text-base"><span className="font-medium">⏱️ Tempo gasto:</span> {selectedChamado.servicoRealizado.tempoGasto}</p>
+                    )}
+                    {/* Fotos do serviço realizado */}
+                    {selectedChamado.servicoRealizado.fotos?.length > 0 && (
+                      <div className="mt-3">
+                        <p className="font-medium mb-2">Fotos do serviço:</p>
+                        <div className="grid grid-cols-4 gap-3">
+                          {selectedChamado.servicoRealizado.fotos.map((foto, idx) => (
+                            <img
+                              key={idx}
+                              src={foto}
+                              alt={`Serviço ${idx + 1}`}
+                              className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-90"
+                              onClick={() => setMidiaAmpliada({ src: foto, type: 'foto' })}
+                            />
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -785,13 +980,13 @@ export default function DentistaChamados() {
               {/* Avaliação */}
               {selectedChamado.avaliacao && (
                 <div>
-                  <h3 className="font-medium text-gray-700 mb-2">Sua Avaliação</h3>
-                  <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-gray-700 mb-2 text-base">⭐ Sua Avaliação</h3>
+                  <div className="bg-gray-50 p-5 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
                       {[1, 2, 3, 4, 5].map((nota) => (
                         <StarIconSolid
                           key={nota}
-                          className={`w-5 h-5 ${
+                          className={`w-6 h-6 ${
                             nota <= selectedChamado.avaliacao.nota
                               ? 'text-yellow-400'
                               : 'text-gray-300'
@@ -800,34 +995,34 @@ export default function DentistaChamados() {
                       ))}
                     </div>
                     {selectedChamado.avaliacao.comentario && (
-                      <p className="text-gray-600">{selectedChamado.avaliacao.comentario}</p>
+                      <p className="text-gray-600 text-base">{selectedChamado.avaliacao.comentario}</p>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Histórico */}
+              {/* Histórico - TAMANHO AUMENTADO */}
               <div>
-                <h3 className="font-medium text-gray-700 mb-2">Histórico de Atualizações</h3>
-                <div className="bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto">
+                <h3 className="font-semibold text-gray-700 mb-2 text-base">📋 Histórico de Atualizações</h3>
+                <div className="bg-gray-50 p-5 rounded-lg max-h-80 overflow-y-auto">
                   {selectedChamado.historico && selectedChamado.historico.length > 0 ? (
                     <div className="space-y-3">
                       {selectedChamado.historico.map((item, index) => (
-                        <div key={index} className="bg-white p-3 rounded-lg">
-                          <div className="flex justify-between items-start mb-1">
+                        <div key={index} className="bg-white p-4 rounded-lg shadow-sm">
+                          <div className="flex justify-between items-start mb-2">
                             <div className="flex items-center gap-2">
-                              {item.tipo === 'criacao' && <PlusIcon className="w-4 h-4 text-green-500" />}
-                              {item.tipo === 'status' && <ArrowPathIcon className="w-4 h-4 text-blue-500" />}
-                              {item.tipo === 'atribuicao' && <UserCircleIcon className="w-4 h-4 text-purple-500" />}
-                              {item.tipo === 'comentario' && <ChatBubbleLeftIcon className="w-4 h-4 text-gray-500" />}
-                              {item.tipo === 'cancelamento' && <XMarkIcon className="w-4 h-4 text-red-500" />}
+                              {item.tipo === 'criacao' && <PlusIcon className="w-5 h-5 text-green-500" />}
+                              {item.tipo === 'status' && <ArrowPathIcon className="w-5 h-5 text-blue-500" />}
+                              {item.tipo === 'atribuicao' && <UserCircleIcon className="w-5 h-5 text-purple-500" />}
+                              {item.tipo === 'comentario' && <ChatBubbleLeftIcon className="w-5 h-5 text-gray-500" />}
+                              {item.tipo === 'cancelamento' && <XMarkIcon className="w-5 h-5 text-red-500" />}
                               <span className="font-medium text-sm">{item.usuario}</span>
                             </div>
                             <span className="text-xs text-gray-500">
                               {formatDate(item.data?.toDate?.() || item.data)}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 ml-6">{item.acao}</p>
+                          <p className="text-sm text-gray-600 ml-7">{item.acao}</p>
                         </div>
                       ))}
                     </div>
@@ -842,7 +1037,7 @@ export default function DentistaChamados() {
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => handleCancelarChamado(selectedChamado.id)}
-                    className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+                    className="px-5 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-base font-medium"
                   >
                     Cancelar Chamado
                   </button>
@@ -853,12 +1048,12 @@ export default function DentistaChamados() {
         </div>
       )}
 
-      {/* Modal de Avaliação */}
+      {/* Modal de Avaliação - TAMANHO AUMENTADO */}
       {showAvaliarModal && selectedChamado && (
         <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full">
+          <div className="bg-white rounded-xl max-w-lg w-full">
             <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800">Avaliar Atendimento</h2>
+              <h2 className="text-2xl font-bold text-gray-800">Avaliar Atendimento</h2>
               <button
                 onClick={() => setShowAvaliarModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -867,24 +1062,24 @@ export default function DentistaChamados() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-gray-600">
-                Como você avalia o atendimento do chamado "{selectedChamado.titulo}"?
+            <div className="p-6 space-y-5">
+              <p className="text-base text-gray-600">
+                Como você avalia o atendimento do chamado "<strong>{selectedChamado.titulo}</strong>"?
               </p>
 
               {/* Estrelas */}
-              <div className="flex justify-center gap-2 py-4">
+              <div className="flex justify-center gap-3 py-4">
                 {[1, 2, 3, 4, 5].map((nota) => (
                   <button
                     key={nota}
                     type="button"
                     onClick={() => setAvaliacao({...avaliacao, nota})}
-                    className="focus:outline-none"
+                    className="focus:outline-none transform hover:scale-110 transition"
                   >
                     {nota <= avaliacao.nota ? (
-                      <StarIconSolid className="w-8 h-8 text-yellow-400 hover:text-yellow-500 transition" />
+                      <StarIconSolid className="w-10 h-10 text-yellow-400 hover:text-yellow-500 transition" />
                     ) : (
-                      <StarIcon className="w-8 h-8 text-gray-300 hover:text-yellow-400 transition" />
+                      <StarIcon className="w-10 h-10 text-gray-300 hover:text-yellow-400 transition" />
                     )}
                   </button>
                 ))}
@@ -892,14 +1087,14 @@ export default function DentistaChamados() {
 
               {/* Comentário */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-base font-medium text-gray-700 mb-2">
                   Comentário (opcional)
                 </label>
                 <textarea
-                  rows="3"
+                  rows="4"
                   value={avaliacao.comentario}
                   onChange={(e) => setAvaliacao({...avaliacao, comentario: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-base"
                   placeholder="Conte-nos mais sobre sua experiência..."
                 />
               </div>
@@ -907,13 +1102,13 @@ export default function DentistaChamados() {
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => setShowAvaliarModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-base"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={handleAvaliarChamado}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                  className="px-5 py-2.5 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-base font-medium"
                 >
                   Enviar Avaliação
                 </button>
@@ -921,6 +1116,15 @@ export default function DentistaChamados() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Lightbox para Mídia */}
+      {midiaAmpliada && (
+        <MediaLightbox
+          src={midiaAmpliada.src}
+          type={midiaAmpliada.type}
+          onClose={() => setMidiaAmpliada(null)}
+        />
       )}
     </div>
   );

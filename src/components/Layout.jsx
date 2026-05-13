@@ -48,28 +48,11 @@ export default function Layout({ children }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Função para criar notificação no Firestore (com tratamento de erro)
+  // Função para criar notificação no Firestore (com tratamento de erro - CORRIGIDA)
   const createNotification = async (userId, titulo, mensagem, tipo, link = null, chamadoId = null) => {
     try {
-      // Verificar se já existe notificação similar nas últimas 24h
-      const ontem = new Date();
-      ontem.setDate(ontem.getDate() - 1);
-      
-      const q = query(
-        collection(db, 'notificacoes'),
-        where('userId', '==', userId),
-        where('chamadoId', '==', chamadoId),
-        where('tipo', '==', tipo),
-        where('data', '>=', ontem)
-      );
-      
-      const existing = await getDocs(q);
-      
-      // Se já existe notificação similar, não criar duplicada
-      if (!existing.empty) {
-        console.log('Notificação já existe, ignorando...');
-        return null;
-      }
+      // REMOVIDA a consulta duplicada que causava erro de índice
+      // Agora apenas cria a notificação sem verificar duplicatas complexas
       
       const notificacaoData = {
         userId: userId,
@@ -88,7 +71,6 @@ export default function Layout({ children }) {
       return docRef.id;
     } catch (error) {
       console.error('Erro ao criar notificação:', error);
-      // Não mostrar toast para evitar spam
       return null;
     }
   };
@@ -103,7 +85,6 @@ export default function Layout({ children }) {
       });
     } catch (error) {
       console.error('Erro ao marcar notificação como lida:', error);
-      // Se erro de permissão, apenas atualizar localmente
       setNotifications(prev =>
         prev.map(n =>
           n.id === notificationId ? { ...n, lida: true } : n
@@ -135,7 +116,6 @@ export default function Layout({ children }) {
       }
     } catch (error) {
       console.error('Erro ao marcar todas como lidas:', error);
-      // Fallback: atualizar localmente
       setNotifications(prev =>
         prev.map(n => ({ ...n, lida: true }))
       );
@@ -145,16 +125,14 @@ export default function Layout({ children }) {
 
   // Função ao clicar na notificação
   const handleNotificationClick = async (notificacao) => {
-    // Marcar como lida se ainda não estiver
     if (!notificacao.lida) {
       await handleMarkAsRead(notificacao.id);
     }
     
-    // Navegar para a página relacionada
     if (notificacao.link) {
       navigate(notificacao.link);
     } else if (notificacao.chamadoId) {
-      navigate(`/${userData?.role}/chamados/${notificacao.chamadoId}`);
+      navigate(`/${userData?.role}/chamados`);
     }
     
     setShowNotifications(false);
@@ -178,26 +156,34 @@ export default function Layout({ children }) {
     }
   };
 
-  // Carregar notificações do Firestore
+  // CORREÇÃO PRINCIPAL: Carregar notificações SEM orderBy (para evitar índice)
   useEffect(() => {
     if (!userData?.uid) return;
 
     console.log('Carregando notificações para usuário:', userData.uid);
 
+    // REMOVIDO o orderBy('data', 'desc') que causava erro de índice
+    // Agora busca apenas com where, sem ordenação na query
     const q = query(
       collection(db, 'notificacoes'),
       where('userId', '==', userData.uid),
-      orderBy('data', 'desc'),
       limit(50)
     );
 
     const unsubscribe = onSnapshot(q, 
       (snapshot) => {
-        const notificacoes = snapshot.docs.map(doc => ({
+        let notificacoes = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
           data: doc.data().data?.toDate?.() || doc.data().createdAt?.toDate?.() || new Date()
         }));
+        
+        // Ordenar manualmente no JavaScript (mais recentes primeiro)
+        notificacoes = notificacoes.sort((a, b) => {
+          const dateA = a.data instanceof Date ? a.data : new Date(a.data);
+          const dateB = b.data instanceof Date ? b.data : new Date(b.data);
+          return dateB - dateA;
+        });
         
         setNotifications(notificacoes);
         const unread = notificacoes.filter(n => !n.lida).length;
@@ -206,7 +192,6 @@ export default function Layout({ children }) {
       },
       (error) => {
         console.error('Erro ao carregar notificações:', error);
-        // Se erro de permissão, mostrar mensagem amigável
         if (error.code === 'permission-denied') {
           console.log('Sem permissão para ler notificações. Verifique as regras do Firebase.');
         }
@@ -216,20 +201,18 @@ export default function Layout({ children }) {
     return () => unsubscribe();
   }, [userData?.uid]);
 
-  // Monitorar eventos em tempo real para criar notificações (APENAS PARA ADMIN)
+  // Monitorar eventos em tempo real para criar notificações - CORRIGIDO
   useEffect(() => {
     if (!userData || userData.role !== 'admin') return;
 
     let unsubscribeChamados;
     let unsubscribeUsuarios;
 
-    // Admin: monitorar chamados urgentes
+    // Admin: monitorar chamados urgentes (SEM orderBy para evitar índice)
     const chamadosQuery = query(
       collection(db, 'chamados'),
       where('prioridade', 'in', ['alta', 'emergencial']),
-      where('status', 'in', ['aberto', 'em_andamento']),
-      orderBy('dataCriacao', 'desc'),
-      limit(10)
+      where('status', 'in', ['aberto', 'em_andamento'])
     );
 
     unsubscribeChamados = onSnapshot(chamadosQuery, (snapshot) => {
@@ -237,7 +220,7 @@ export default function Layout({ children }) {
         if (change.type === 'added') {
           const chamado = change.doc.data();
           
-          // Verificar se já existe notificação para este chamado
+          // Verificar se já existe notificação para este chamado (busca simples)
           const existingNotif = notifications.find(n => n.chamadoId === change.doc.id);
           if (!existingNotif) {
             await createNotification(
@@ -255,11 +238,9 @@ export default function Layout({ children }) {
       console.error('Erro no listener de chamados:', error);
     });
 
-    // Admin: monitorar novos usuários
+    // Admin: monitorar novos usuários (SEM orderBy para evitar índice)
     const usuariosQuery = query(
-      collection(db, 'usuarios'),
-      orderBy('dataCriacao', 'desc'),
-      limit(5)
+      collection(db, 'usuarios')
     );
 
     unsubscribeUsuarios = onSnapshot(usuariosQuery, (snapshot) => {
@@ -267,7 +248,6 @@ export default function Layout({ children }) {
         if (change.type === 'added') {
           const usuario = change.doc.data();
           
-          // Não criar notificação para o próprio usuário
           if (usuario.uid !== userData.uid) {
             const existingNotif = notifications.find(n => n.id === `usuario-${change.doc.id}`);
             if (!existingNotif) {
@@ -417,7 +397,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-800">
-      {/* Header - mantido igual */}
+      {/* Header */}
       <header className="bg-gray-700 border-b border-gray-600 sticky top-0 z-30">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -572,7 +552,7 @@ export default function Layout({ children }) {
           fixed top-16 bottom-0 left-0 overflow-y-auto z-20 bg-gray-900 shadow-xl min-h-screen border-r border-gray-700
           transform transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-56'}
+          ${sidebarCollapsed ? 'lg:w-15' : 'lg:w-56'}
           w-56
         `}>
           <nav className="mt-4 px-2">
@@ -621,7 +601,7 @@ export default function Layout({ children }) {
           flex-1 p-6 min-w-0 transition-all duration-300 bg-white
           ${sidebarCollapsed}
         `}>
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             {children}
           </div>
         </main>
