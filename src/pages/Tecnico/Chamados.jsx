@@ -33,7 +33,9 @@ import {
   PauseIcon,
   BuildingStorefrontIcon,
   TruckIcon,
-  XCircleIcon
+  XCircleIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
@@ -46,6 +48,15 @@ export default function TecnicoChamados() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroPrioridade, setFiltroPrioridade] = useState('todos');
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateRange, setDateRange] = useState({
+    inicio: '',
+    fim: ''
+  });
+  
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
   
   // Modais
   const [showDetalhesModal, setShowDetalhesModal] = useState(false);
@@ -94,7 +105,12 @@ export default function TecnicoChamados() {
     return () => unsubscribe();
   }, [userData]);
 
-  // Funções de imagem (mantidas iguais)
+  // Reset para primeira página quando filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filtroStatus, filtroPrioridade, dateRange]);
+
+  // Funções de imagem
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -126,7 +142,6 @@ export default function TecnicoChamados() {
     });
   };
 
-  // Função para atualizar status com log de motivo
   const handleUpdateStatus = async (chamadoId, newStatus, motivo = null) => {
     try {
       const chamadoRef = doc(db, 'chamados', chamadoId);
@@ -189,7 +204,6 @@ export default function TecnicoChamados() {
     }
   };
   
-  // Abrir modais
   const openPausaModal = (chamado, tipo) => {
     setSelectedChamado(chamado);
     setPausaTipo(tipo);
@@ -201,7 +215,6 @@ export default function TecnicoChamados() {
     setShowCancelarModal(true);
   };
   
-  // Confirmar ações
   const confirmarPausa = async () => {
     if (!pausaMotivo.trim()) {
       toast.error('Informe o motivo da pausa');
@@ -359,16 +372,30 @@ export default function TecnicoChamados() {
     }
   };
 
+  // Filtros
   const filteredChamados = chamados.filter(chamado => {
     const matchesSearch =
       chamado.titulo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.equipamento?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.solicitanteNome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      chamado.unidade?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chamado.id?.toLowerCase().includes(searchTerm.toLowerCase());
+    
     const matchesStatus = filtroStatus === 'todos' || chamado.status === filtroStatus;
     const matchesPrioridade = filtroPrioridade === 'todos' || chamado.prioridade === filtroPrioridade;
-    return matchesSearch && matchesStatus && matchesPrioridade;
+    
+    const matchesDateRange = 
+      (!dateRange.inicio || new Date(chamado.dataCriacao) >= new Date(dateRange.inicio)) &&
+      (!dateRange.fim || new Date(chamado.dataCriacao) <= new Date(dateRange.fim));
+    
+    return matchesSearch && matchesStatus && matchesPrioridade && matchesDateRange;
   });
+
+  // Paginação
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredChamados.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredChamados.length / itemsPerPage);
 
   const stats = {
     total: chamados.length,
@@ -443,6 +470,102 @@ export default function TecnicoChamados() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Limpar filtros
+  const limparFiltros = () => {
+    setSearchTerm('');
+    setFiltroStatus('todos');
+    setFiltroPrioridade('todos');
+    setDateRange({ inicio: '', fim: '' });
+    toast.success('Filtros limpos');
+  };
+
+  // Componente de paginação
+  const Pagination = () => {
+    if (totalPages <= 1) return null;
+
+    const getPageNumbers = () => {
+      const pages = [];
+      const maxVisible = 5;
+      let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+      let end = Math.min(totalPages, start + maxVisible - 1);
+      
+      if (end - start + 1 < maxVisible) {
+        start = Math.max(1, end - maxVisible + 1);
+      }
+      
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+      return pages;
+    };
+
+    return (
+      <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 mt-4 rounded-lg">
+        <div className="flex flex-1 justify-between sm:hidden">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Anterior
+          </button>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Próxima
+          </button>
+        </div>
+        
+        <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm text-gray-700">
+              Mostrando <span className="font-medium">{indexOfFirstItem + 1}</span> a{' '}
+              <span className="font-medium">{Math.min(indexOfLastItem, filteredChamados.length)}</span> de{' '}
+              <span className="font-medium">{filteredChamados.length}</span> resultados
+            </p>
+          </div>
+          <div>
+            <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="sr-only">Anterior</span>
+                <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+              </button>
+              
+              {getPageNumbers().map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                    currentPage === page
+                      ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                      : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="sr-only">Próxima</span>
+                <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -525,232 +648,314 @@ export default function TecnicoChamados() {
       </div>
 
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Total</p>
-          <p className="text-2xl font-bold text-gray-800">{stats.total}</p>
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 lg:grid-cols-7">
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Total</p>
+          <p className="text-lg sm:text-xl font-bold text-gray-800">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Abertos</p>
-          <p className="text-2xl font-bold text-yellow-600">{stats.abertos}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Abertos</p>
+          <p className="text-lg sm:text-xl font-bold text-yellow-600">{stats.abertos}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Em Andamento</p>
-          <p className="text-2xl font-bold text-blue-600">{stats.andamento}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Andamento</p>
+          <p className="text-lg sm:text-xl font-bold text-blue-600">{stats.andamento}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Em Pausa</p>
-          <p className="text-2xl font-bold text-orange-600">{stats.pausados}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Pausa</p>
+          <p className="text-lg sm:text-xl font-bold text-orange-600">{stats.pausados}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Em Oficina</p>
-          <p className="text-2xl font-bold text-purple-600">{stats.oficina}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Oficina</p>
+          <p className="text-lg sm:text-xl font-bold text-purple-600">{stats.oficina}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Aguard. Peças</p>
-          <p className="text-2xl font-bold text-red-600">{stats.aguardandoPecas}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Peças</p>
+          <p className="text-lg sm:text-xl font-bold text-red-600">{stats.aguardandoPecas}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-          <p className="text-sm text-gray-500">Concluídos</p>
-          <p className="text-2xl font-bold text-green-600">{stats.concluidos}</p>
+        <div className="bg-white rounded-lg shadow-sm p-2 sm:p-3 border border-gray-100">
+          <p className="text-xs text-gray-500">Concluídos</p>
+          <p className="text-lg sm:text-xl font-bold text-green-600">{stats.concluidos}</p>
         </div>
       </div>
 
       {/* Filtros */}
-      <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar por título, equipamento, solicitante..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="w-full px-4 py-3 flex items-center justify-between text-gray-700 hover:bg-gray-50"
+        >
+          <div className="flex items-center gap-2">
+            <FunnelIcon className="w-5 h-5" />
+            <span className="font-medium">Filtros</span>
+            {(filtroStatus !== 'todos' || filtroPrioridade !== 'todos' || searchTerm || dateRange.inicio || dateRange.fim) && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">Ativo</span>
+            )}
           </div>
-          <select
-            value={filtroStatus}
-            onChange={(e) => setFiltroStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="todos">Todos os status</option>
-            <option value="aberto">Abertos</option>
-            <option value="em_andamento">Em Andamento</option>
-            <option value="em_pausa">Em Pausa</option>
-            <option value="em_oficina">Em Oficina</option>
-            <option value="aguardando_pecas">Aguardando Peças</option>
-            <option value="concluido">Concluídos</option>
-            <option value="cancelado">Cancelados</option>
-          </select>
-          <select
-            value={filtroPrioridade}
-            onChange={(e) => setFiltroPrioridade(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="todos">Todas prioridades</option>
-            <option value="baixa">Baixa</option>
-            <option value="media">Média</option>
-            <option value="alta">Alta</option>
-            <option value="emergencial">Emergencial</option>
-          </select>
-        </div>
+          <ChevronDownIcon className={`w-5 h-5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showFilters && (
+          <div className="p-4 border-t border-gray-100 space-y-4">
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar por título, equipamento, solicitante, unidade..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <select
+                value={filtroStatus}
+                onChange={(e) => setFiltroStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="todos">Todos os status</option>
+                <option value="aberto">Aberto</option>
+                <option value="em_andamento">Em Andamento</option>
+                <option value="em_pausa">Em Pausa</option>
+                <option value="em_oficina">Em Oficina</option>
+                <option value="aguardando_pecas">Aguardando Peças</option>
+                <option value="concluido">Concluído</option>
+                <option value="cancelado">Cancelado</option>
+              </select>
+
+              <select
+                value={filtroPrioridade}
+                onChange={(e) => setFiltroPrioridade(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="todos">Todas prioridades</option>
+                <option value="baixa">Baixa</option>
+                <option value="media">Média</option>
+                <option value="alta">Alta</option>
+                <option value="emergencial">Emergencial</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Data Inicial</label>
+                <input
+                  type="date"
+                  value={dateRange.inicio}
+                  onChange={(e) => setDateRange({...dateRange, inicio: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Data Final</label>
+                <input
+                  type="date"
+                  value={dateRange.fim}
+                  onChange={(e) => setDateRange({...dateRange, fim: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={limparFiltros}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Limpar Filtros
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Lista de Chamados */}
-      <div className="space-y-4">
-        {filteredChamados.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-gray-100">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <WrenchScrewdriverIcon className="w-12 h-12 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum chamado encontrado</h3>
-            <p className="text-gray-500 mb-6">Você não possui chamados atribuídos ou nenhum resultado corresponde à sua busca.</p>
-          </div>
-        ) : (
-          filteredChamados.map((chamado) => (
-            <div
-              key={chamado.id}
-              className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition cursor-pointer"
-              onClick={() => {
-                setSelectedChamado(chamado);
-                setShowDetalhesModal(true);
-              }}
-            >
-              <div className="p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <span className="text-xs text-gray-500">#{chamado.id.slice(-6)}</span>
+      {/* Resultado da Busca */}
+      <p className="text-sm text-gray-500">
+        Mostrando {filteredChamados.length} chamados
+      </p>
+
+      {/* LISTAGEM - Desktop: Tabela | Mobile/Tablet: Cards Grid */}
+      
+      {/* Desktop (LG+): Tabela */}
+      <div className="hidden lg:block bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Chamado</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unidade</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Solicitante</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prioridade</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {currentItems.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                    Nenhum chamado encontrado
+                  </td>
+                </tr>
+              ) : (
+                currentItems.map((chamado) => (
+                  <tr key={chamado.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => {
+                    setSelectedChamado(chamado);
+                    setShowDetalhesModal(true);
+                  }}>
+                    <td className="px-6 py-4 text-sm text-gray-500">#{chamado.id.slice(-6)}</td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{chamado.titulo}</div>
+                      <div className="text-xs text-gray-500">{chamado.equipamento}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1">
+                        <MapPinIcon className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-gray-600">{chamado.unidade || '-'}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{chamado.solicitanteNome}</td>
+                    <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getStatusColor(chamado.status)}`}>
                         {getStatusIcon(chamado.status)}
                         {getStatusText(chamado.status)}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border ${getPrioridadeColor(chamado.prioridade)}`}>
-                        {chamado.prioridade === 'emergencial' && <ExclamationTriangleIcon className="w-3 h-3" />}
                         {chamado.prioridade}
                       </span>
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-1">{chamado.titulo}</h3>
-                    <p className="text-sm text-gray-600">{chamado.equipamento}</p>
-                    <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 bg-blue-50 inline-flex px-2 py-0.5 rounded-full">
-                      <MapPinIcon className="w-3 h-3" />
-                      {chamado.unidade || 'Unidade não informada'}
-                    </div>
-                  </div>
-                  
-                  {/* Botões de ação no card */}
-                  {chamado.status === 'aberto' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUpdateStatus(chamado.id, 'em_andamento');
-                      }}
-                      className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-                    >
-                      <ArrowPathIcon className="w-4 h-4" />
-                      Iniciar
-                    </button>
-                  )}
-                  
-                  {chamado.status === 'em_andamento' && (
-                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => openPausaModal(chamado, 'pausa')}
-                        className="flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 text-sm"
-                      >
-                        <PauseIcon className="w-4 h-4" />
-                        Pausar
-                      </button>
-                      <button
-                        onClick={() => openPausaModal(chamado, 'oficina')}
-                        className="flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm"
-                      >
-                        <BuildingStorefrontIcon className="w-4 h-4" />
-                        Oficina
-                      </button>
-                      <button
-                        onClick={() => openPausaModal(chamado, 'pecas')}
-                        className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
-                      >
-                        <TruckIcon className="w-4 h-4" />
-                        Peças
-                      </button>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {new Date(chamado.dataCriacao).toLocaleDateString('pt-BR')}
+                    </td>
+                    <td className="px-6 py-4">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedChamado(chamado);
-                          setShowFinalizarModal(true);
+                          setShowDetalhesModal(true);
                         }}
-                        className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm"
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Visualizar"
                       >
-                        <CheckCircleIcon className="w-4 h-4" />
-                        Finalizar
+                        <EyeIcon className="w-5 h-5" />
                       </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pagination />
+      </div>
+
+      {/* Mobile/Tablet (abaixo de LG): Cards em Grid */}
+      <div className="lg:hidden">
+        {currentItems.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center border border-gray-100">
+            <WrenchScrewdriverIcon className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-500">Nenhum chamado encontrado</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {currentItems.map((chamado) => (
+                <div
+                  key={chamado.id}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 active:bg-gray-50 cursor-pointer"
+                  onClick={() => {
+                    setSelectedChamado(chamado);
+                    setShowDetalhesModal(true);
+                  }}
+                >
+                  {/* Cabeçalho do card */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400">#{chamado.id.slice(-6)}</span>
+                      <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusColor(chamado.status)}`}>
+                        {getStatusText(chamado.status)}
+                      </span>
                     </div>
-                  )}
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${getPrioridadeColor(chamado.prioridade)}`}>
+                      {chamado.prioridade}
+                    </span>
+                  </div>
                   
-                  {/* Botões para chamados pausados/aguardando */}
-                  {(chamado.status === 'em_pausa' || chamado.status === 'em_oficina' || chamado.status === 'aguardando_pecas') && (
-                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  {/* Título e equipamento */}
+                  <h3 className="font-medium text-gray-800 text-sm mb-1 line-clamp-2">{chamado.titulo}</h3>
+                  <p className="text-xs text-gray-500 mb-2">{chamado.equipamento}</p>
+                  
+                  {/* Unidade - destaque visual */}
+                  <div className="flex items-center gap-1 mb-3">
+                    <MapPinIcon className="w-3 h-3 text-blue-500" />
+                    <span className="text-xs text-blue-600 font-medium truncate">
+                      {chamado.unidade || 'Unidade não informada'}
+                    </span>
+                  </div>
+                  
+                  {/* Botões de ação rápidos */}
+                  <div className="flex gap-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                    {chamado.status === 'aberto' && (
                       <button
                         onClick={() => handleUpdateStatus(chamado.id, 'em_andamento')}
-                        className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
                       >
-                        <ArrowPathIcon className="w-4 h-4" />
-                        Retomar
+                        <ArrowPathIcon className="w-3 h-3" />
+                        Iniciar
                       </button>
-                      <button
-                        onClick={() => openCancelarModal(chamado)}
-                        className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-                      >
-                        <XCircleIcon className="w-4 h-4" />
-                        Cancelar
-                      </button>
-                    </div>
-                  )}
-                  
-                  {chamado.status !== 'concluido' && chamado.status !== 'cancelado' && chamado.status !== 'aberto' && chamado.status !== 'em_andamento' && 
-                   chamado.status !== 'em_pausa' && chamado.status !== 'em_oficina' && chamado.status !== 'aguardando_pecas' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openCancelarModal(chamado);
-                      }}
-                      className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
-                    >
-                      <XCircleIcon className="w-4 h-4" />
-                      Cancelar
-                    </button>
-                  )}
+                    )}
+                    
+                    {chamado.status === 'em_andamento' && (
+                      <div className="flex gap-2 w-full">
+                        <button
+                          onClick={() => openPausaModal(chamado, 'pausa')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs font-medium"
+                        >
+                          <PauseIcon className="w-3 h-3" />
+                          Pausar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedChamado(chamado);
+                            setShowFinalizarModal(true);
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-50 text-green-600 rounded-lg text-xs font-medium"
+                        >
+                          <CheckCircleIcon className="w-3 h-3" />
+                          Finalizar
+                        </button>
+                      </div>
+                    )}
+                    
+                    {(chamado.status === 'em_pausa' || chamado.status === 'em_oficina' || chamado.status === 'aguardando_pecas') && (
+                      <div className="flex gap-2 w-full">
+                        <button
+                          onClick={() => handleUpdateStatus(chamado.id, 'em_andamento')}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
+                        >
+                          <ArrowPathIcon className="w-3 h-3" />
+                          Retomar
+                        </button>
+                        <button
+                          onClick={() => openCancelarModal(chamado)}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium"
+                        >
+                          <XCircleIcon className="w-3 h-3" />
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
-                  <div className="flex items-center text-gray-600">
-                    <UserCircleIcon className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="font-medium mr-1">Solicitante:</span> {chamado.solicitanteNome}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <CalendarIcon className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="font-medium mr-1">Aberto em:</span> {formatDate(chamado.dataCriacao)}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <MapPinIcon className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="font-medium mr-1">Unidade:</span> {chamado.unidade || 'Não informada'}
-                  </div>
-                </div>
-                
-                {chamado.historico && chamado.historico.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <p className="text-sm text-gray-500">
-                      <span className="font-medium">Última atualização:</span>{' '}
-                      {chamado.historico[chamado.historico.length - 1].acao}
-                    </p>
-                  </div>
-                )}
-              </div>
+              ))}
             </div>
-          ))
+            <Pagination />
+          </>
         )}
       </div>
 
@@ -854,19 +1059,6 @@ export default function TecnicoChamados() {
                       Cancelar Chamado
                     </button>
                   </>
-                )}
-                
-                {selectedChamado.status !== 'concluido' && selectedChamado.status !== 'cancelado' && 
-                 selectedChamado.status !== 'aberto' && selectedChamado.status !== 'em_andamento' &&
-                 selectedChamado.status !== 'em_pausa' && selectedChamado.status !== 'em_oficina' && 
-                 selectedChamado.status !== 'aguardando_pecas' && (
-                  <button
-                    onClick={() => openCancelarModal(selectedChamado)}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    <XCircleIcon className="w-5 h-5" />
-                    Cancelar Chamado
-                  </button>
                 )}
               </div>
 
@@ -1338,7 +1530,7 @@ export default function TecnicoChamados() {
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-gray-600">
- Tem certeza que deseja cancelar o chamado: <strong>{selectedChamado.titulo}</strong>?
+                Tem certeza que deseja cancelar o chamado: <strong>{selectedChamado.titulo}</strong>?
               </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
