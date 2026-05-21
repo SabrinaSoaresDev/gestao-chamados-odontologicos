@@ -323,32 +323,32 @@ export default function AdminChamados() {
     }
   };
 
-  const handleAtribuirTecnico = async (chamadoId, tecnicoId, tecnicoNome) => {
-    try {
-      const chamadoRef = doc(db, 'chamados', chamadoId);
-      const chamado = chamados.find(c => c.id === chamadoId);
-      
-      await updateDoc(chamadoRef, {
-        tecnicoId,
-        tecnicoNome,
-        status: 'em_andamento',
-        historico: [
-          ...(chamado?.historico || []),
-          {
-            data: new Date(),
-            acao: `Técnico ${tecnicoNome} atribuído ao chamado`,
-            usuario: `${userData.nome} (Admin)`,
-            tipo: 'atribuicao'
-          }
-        ]
-      });
-      toast.success('Técnico atribuído com sucesso!');
-    } catch (error) {
-      console.error('Erro ao atribuir técnico:', error);
-      toast.error('Erro ao atribuir técnico');
-    }
-  };
-
+ const handleAtribuirTecnico = async (chamadoId, tecnicoId, tecnicoNome) => {
+  try {
+    const chamadoRef = doc(db, 'chamados', chamadoId);
+    const chamado = chamados.find(c => c.id === chamadoId);
+    
+    await updateDoc(chamadoRef, {
+      tecnicoId,
+      tecnicoNome,
+      status: 'em_andamento',
+      dataInicio: chamado?.dataInicio || new Date(),
+      historico: [
+        ...(chamado?.historico || []),
+        {
+          data: new Date(),
+          acao: `Técnico ${tecnicoNome} atribuído ao chamado`,
+          usuario: `${userData.nome} (Admin)`,
+          tipo: 'atribuicao'
+        }
+      ]
+    });
+    toast.success('Técnico atribuído com sucesso!');
+  } catch (error) {
+    console.error('Erro ao atribuir técnico:', error);
+    toast.error('Erro ao atribuir técnico');
+  }
+};
   const handleAddAtualizacao = async (chamadoId) => {
     if (!atualizacao.trim()) return;
 
@@ -982,35 +982,92 @@ export default function AdminChamados() {
                 </div>
               </div>
 
-              <div>
-                <h3 className="font-medium text-gray-700 mb-2">Técnico Responsável</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  {selectedChamado.tecnicoNome ? (
-                    <div className="flex items-center gap-2">
-                      <UserCircleIcon className="w-8 h-8 text-gray-400" />
-                      <div>
-                        <p className="font-medium">{selectedChamado.tecnicoNome}</p>
-                        <p className="text-xs text-gray-500">Técnico responsável</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <select
-                      onChange={(e) => { 
-                        const tecnico = tecnicos.find(t => t.id === e.target.value); 
-                        if (tecnico) { 
-                          handleAtribuirTecnico(selectedChamado.id, tecnico.id, tecnico.nome); 
-                          setSelectedChamado({...selectedChamado, tecnicoId: tecnico.id, tecnicoNome: tecnico.nome}); 
-                        } 
-                      }} 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg" 
-                      value=""
-                    >
-                      <option value="" disabled>Selecionar técnico</option>
-                      {tecnicos.map(t => (<option key={t.id} value={t.id}>{t.nome}</option>))}
-                    </select>
-                  )}
-                </div>
-              </div>
+            {/* Técnico Responsável - COMPLETO COM ATRIBUIÇÃO */}
+<div>
+  <h3 className="font-medium text-gray-700 mb-2">Técnico Responsável</h3>
+  <div className="bg-gray-50 p-4 rounded-lg">
+    {selectedChamado.tecnicoNome ? (
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <UserCircleIcon className="w-8 h-8 text-gray-400" />
+          <div>
+            <p className="font-medium">{selectedChamado.tecnicoNome}</p>
+            <p className="text-xs text-gray-500">Técnico responsável</p>
+            {selectedChamado.dataInicio && (
+              <p className="text-xs text-gray-400 mt-1">
+                Início: {formatarDataHora(selectedChamado.dataInicio)}
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            if (window.confirm('Deseja realmente remover este técnico do chamado?')) {
+              const chamadoRef = doc(db, 'chamados', selectedChamado.id);
+              updateDoc(chamadoRef, {
+                tecnicoId: null,
+                tecnicoNome: null,
+                status: 'aberto',
+                historico: [
+                  ...(selectedChamado.historico || []),
+                  {
+                    data: new Date(),
+                    acao: `Técnico ${selectedChamado.tecnicoNome} removido do chamado. Status voltou para Aberto.`,
+                    usuario: `${userData.nome} (Admin)`,
+                    tipo: 'atribuicao'
+                  }
+                ]
+              }).then(() => {
+                toast.success('Técnico removido com sucesso!');
+                setSelectedChamado({
+                  ...selectedChamado,
+                  tecnicoId: null,
+                  tecnicoNome: null,
+                  status: 'aberto'
+                });
+              }).catch(error => {
+                console.error('Erro ao remover técnico:', error);
+                toast.error('Erro ao remover técnico');
+              });
+            }
+          }}
+          className="text-sm text-red-600 hover:text-red-800"
+        >
+          Remover Técnico
+        </button>
+      </div>
+    ) : (
+      <div className="space-y-3">
+        <select
+          onChange={(e) => {
+            const tecnico = tecnicos.find(t => t.id === e.target.value);
+            if (tecnico) {
+              handleAtribuirTecnico(selectedChamado.id, tecnico.id, tecnico.nome);
+              setSelectedChamado({
+                ...selectedChamado,
+                tecnicoId: tecnico.id,
+                tecnicoNome: tecnico.nome
+              });
+            }
+          }}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          value=""
+        >
+          <option value="" disabled>Selecionar técnico</option>
+          {tecnicos.map(t => (
+            <option key={t.id} value={t.id}>{t.nome}</option>
+          ))}
+        </select>
+        
+        {tecnicos.length === 0 && (
+          <p className="text-sm text-yellow-600">
+            ⚠️ Nenhum técnico disponível. Cadastre técnicos na seção de usuários.
+          </p>
+        )}
+      </div>
+    )}
+  </div>
+</div>
 
               <div>
                 <h3 className="font-medium text-gray-700 mb-2">Descrição do Problema</h3>
