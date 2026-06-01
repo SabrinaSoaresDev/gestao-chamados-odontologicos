@@ -92,7 +92,7 @@ export default function AdminConfiguracoes() {
       reterBackups: 30
     },
     versao: {
-      versao: '3.0.0',
+      versao: '4.0.0',
       dataLancamento: new Date().toISOString(),
       changelog: [
         '✅ Novos status de chamados (Em Pausa, Em Oficina, Aguardando Peças)',
