@@ -1,4 +1,5 @@
 import React from 'react';
+import { NotificationProvider } from './contexts/NotificationContext';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Toaster } from 'react-hot-toast';
@@ -182,6 +183,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <NotificationProvider>
         <Toaster 
           position="top-right"
           toastOptions={{
@@ -193,6 +195,7 @@ function App() {
           }}
         />
         <AppRoutes />
+        </NotificationProvider>
       </AuthProvider>
     </Router>
   );

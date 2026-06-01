@@ -48,6 +48,7 @@ export function AuthProvider({ children }) {
           email: user.email,
           nome: 'Administrador',
           role: 'admin',
+          tipo: 'admin',
           ativo: true,
           createdAt: new Date()
         };
@@ -60,18 +61,11 @@ export function AuthProvider({ children }) {
         if (userDoc.exists()) {
           return userDoc.data();
         } else {
-          // Usuário autenticado mas não cadastrado - criar como dentista padrão
-          const newUserData = {
-            uid: user.uid,
-            email: user.email,
-            nome: user.email.split('@')[0] || 'Novo Usuário',
-            role: 'dentista', // Papel padrão
-            ativo: true,
-            createdAt: new Date()
-          };
-          
-          await setDoc(doc(db, 'usuarios', user.uid), newUserData);
-          return newUserData;
+          // Usuário autenticado mas não cadastrado - NÃO criar automaticamente
+          console.error('Usuário não cadastrado no sistema');
+          toast.error('Usuário não autorizado. Contate o administrador.');
+          await signOut(auth);
+          return null;
         }
       }
     } catch (error) {
@@ -92,26 +86,21 @@ export function AuthProvider({ children }) {
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
-              setUserData(docSnap.data());
+              const userDataFromDb = docSnap.data();
+              console.log('📋 Dados do usuário carregados:', userDataFromDb);
+              console.log('📋 Role do usuário:', userDataFromDb.role);
+              console.log('📋 Tipo do usuário:', userDataFromDb.tipo);
+              setUserData(userDataFromDb);
             } else {
-              // Se não existir, criar usuário inicial
-              const newUserData = await createInitialUser(user);
-              setUserData(newUserData);
-              
-              if (newUserData) {
-                toast.success('Usuário cadastrado com sucesso!');
-              }
+              console.error('❌ Usuário não encontrado no banco de dados');
+              toast.error('Usuário não autorizado. Contate o administrador.');
+              await signOut(auth);
+              setUserData(null);
             }
           } catch (error) {
             console.error('Erro ao buscar dados do usuário:', error);
-            
-            // Se for erro de permissão, tentar criar usuário
-            if (error.code === 'permission-denied') {
-              const newUserData = await createInitialUser(user);
-              setUserData(newUserData);
-            } else {
-              toast.error('Erro ao carregar dados do usuário');
-            }
+            toast.error('Erro ao carregar dados do usuário');
+            setUserData(null);
           }
         } else {
           setUserData(null);

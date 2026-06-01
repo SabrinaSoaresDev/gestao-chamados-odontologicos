@@ -41,6 +41,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { storage } from '../../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import toast from 'react-hot-toast';
+import ChatDoChamado from '../../components/ChatDoChamado';
 
 export default function DentistaChamados() {
   const { userData } = useAuth();
@@ -56,6 +57,9 @@ export default function DentistaChamados() {
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [unidadeUsuario, setUnidadeUsuario] = useState('');
   const [midiaAmpliada, setMidiaAmpliada] = useState(null);
+  const [showChatModal, setShowChatModal] = useState(false);
+const [chamadoSelecionadoChat, setChamadoSelecionadoChat] = useState(null);
+const [mensagensNaoLidas, setMensagensNaoLidas] = useState({});
   
   const [formData, setFormData] = useState({
     titulo: '',
@@ -131,6 +135,36 @@ export default function DentistaChamados() {
 
     return () => unsubscribe();
   }, [userData]);
+
+// Buscar mensagens não lidas para cada chamado
+useEffect(() => {
+  if (!chamados.length) return;
+  
+  const unsubscribes = [];
+  
+  chamados.forEach(chamado => {
+    // USAR O MESMO NOME DO ChatDoChamado
+    const chatCollection = `mensagens_chamado_${chamado.id}`;
+    const q = query(
+      collection(db, chatCollection),
+      where('lida', '==', false),
+      where('remetenteId', '!=', userData?.uid)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setMensagensNaoLidas(prev => ({
+        ...prev,
+        [chamado.id]: snapshot.size
+      }));
+    });
+    
+    unsubscribes.push(unsubscribe);
+  });
+  
+  return () => {
+    unsubscribes.forEach(unsub => unsub());
+  };
+}, [chamados]);
 
   // Criar novo chamado
   const handleSubmitNovoChamado = async (e) => {
@@ -489,66 +523,82 @@ export default function DentistaChamados() {
                   </td>
                   <td className="px-4 py-3 text-sm">{formatDate(chamado.dataCriacao)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedChamado(chamado);
+                        setShowDetalhesModal(true);
+                      }}
+                      className="text-blue-600 hover:text-blue-800"
+                      title="Visualizar"
+                    >
+                      <EyeIcon className="w-5 h-5" />
+                    </button>
+                    {chamado.status === 'aberto' && (
+                      <>
+                        <button
+                          onClick={() => abrirEditarChamado(chamado)}
+                          className="text-green-600 hover:text-green-800"
+                          title="Editar"
+                        >
+                          <PencilIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleCancelarChamado(chamado.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Cancelar"
+                        >
+                          <XMarkIcon className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+                    {chamado.status === 'cancelado' && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Reabrir este chamado?')) {
+                            updateDoc(doc(db, 'chamados', chamado.id), {
+                              status: 'aberto',
+                              historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto pelo solicitante', usuario: userData.nome }]
+                            }).then(() => toast.success('Chamado reaberto!'));
+                          }
+                        }}
+                        className="text-orange-600 hover:text-orange-800"
+                        title="Reabrir"
+                      >
+                        <ArrowPathIcon className="w-5 h-5" />
+                      </button>
+                    )}
+                    {chamado.status === 'concluido' && !chamado.avaliacao && (
                       <button
                         onClick={() => {
                           setSelectedChamado(chamado);
-                          setShowDetalhesModal(true);
+                          setShowAvaliarModal(true);
                         }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Visualizar"
+                        className="text-yellow-600 hover:text-yellow-800"
+                        title="Avaliar"
                       >
-                        <EyeIcon className="w-5 h-5" />
+                        <StarIcon className="w-5 h-5" />
                       </button>
-                      {chamado.status === 'aberto' && (
-                        <>
-                          <button
-                            onClick={() => abrirEditarChamado(chamado)}
-                            className="text-green-600 hover:text-green-800"
-                            title="Editar"
-                          >
-                            <PencilIcon className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleCancelarChamado(chamado.id)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Cancelar"
-                          >
-                            <XMarkIcon className="w-5 h-5" />
-                          </button>
-                        </>
+                    )}
+                    {/* Botão de Chat - sempre visível */}
+                    <button
+                      onClick={() => {
+                        setChamadoSelecionadoChat(chamado);
+                        setShowChatModal(true);
+                      }}
+                      className="text-purple-600 hover:text-purple-800 relative"
+                      title="Chat"
+                    >
+                      <ChatBubbleLeftIcon className="w-5 h-5" />
+                      {mensagensNaoLidas[chamado.id] > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                          {mensagensNaoLidas[chamado.id]}
+                        </span>
                       )}
-                      {chamado.status === 'cancelado' && (
-                        <button
-                          onClick={() => {
-                            // Função para reabrir chamado
-                            if (window.confirm('Reabrir este chamado?')) {
-                              updateDoc(doc(db, 'chamados', chamado.id), {
-                                status: 'aberto',
-                                historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto pelo solicitante', usuario: userData.nome }]
-                              }).then(() => toast.success('Chamado reaberto!'));
-                            }
-                          }}
-                          className="text-orange-600 hover:text-orange-800"
-                          title="Reabrir"
-                        >
-                          <ArrowPathIcon className="w-5 h-5" />
-                        </button>
-                      )}
-                      {chamado.status === 'concluido' && !chamado.avaliacao && (
-                        <button
-                          onClick={() => {
-                            setSelectedChamado(chamado);
-                            setShowAvaliarModal(true);
-                          }}
-                          className="text-yellow-600 hover:text-yellow-800"
-                          title="Avaliar"
-                        >
-                          <StarIcon className="w-5 h-5" />
-                        </button>
-                      )}
-                    </div>
-                   </td>
+                    </button>
+                  </div>
+                </td>
+                 
                 </tr>
               ))}
               {filteredChamados.length === 0 && (
@@ -607,6 +657,21 @@ export default function DentistaChamados() {
                     >
                       <XMarkIcon className="w-5 h-5" />
                     </button>
+                    <button
+  onClick={() => {
+    setChamadoSelecionadoChat(chamado);
+    setShowChatModal(true);
+  }}
+  className="text-purple-600 relative"
+  title="Chat"
+>
+  <ChatBubbleLeftIcon className="w-5 h-5" />
+  {mensagensNaoLidas[chamado.id] > 0 && (
+    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+      {mensagensNaoLidas[chamado.id]}
+    </span>
+  )}
+</button> 
                   </>
                 )}
                 {chamado.status === 'cancelado' && (
@@ -847,6 +912,19 @@ export default function DentistaChamados() {
           </div>
         </div>
       )}
+      {/* Modal do Chat */}
+{showChatModal && chamadoSelecionadoChat && (
+  <ChatDoChamado
+    chamado={chamadoSelecionadoChat}
+    onClose={() => {
+      setShowChatModal(false);
+      setChamadoSelecionadoChat(null);
+    }}
+    onNovaMensagem={() => {
+      // Atualizar contador de mensagens não lidas
+    }}
+  />
+)}
     </div>
   );
 }

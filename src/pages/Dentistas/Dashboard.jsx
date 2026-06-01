@@ -32,7 +32,32 @@ import NovoChamadoModal from '../../components/Chamados/NovoChamadoModal';
 
 // Componente de Gráfico de Barras Simplificado
 const BarChart = ({ data, title, color = 'blue' }) => {
+  // Verificar se há dados
+  if (!data || data.length === 0 || data.every(d => d.value === 0)) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+        <h3 className="font-semibold text-gray-800 mb-4">{title}</h3>
+        <div className="flex flex-col items-center justify-center py-8">
+          <ShoppingCartIcon className="w-16 h-16 text-gray-300 mb-3" />
+          <p className="text-gray-500 text-sm">Nenhum dado disponível</p>
+        </div>
+      </div>
+    );
+  }
+  
   const maxValue = Math.max(...data.map(d => d.value), 1);
+  
+  const getColorClass = (colorName) => {
+    const colors = {
+      blue: 'bg-blue-500',
+      green: 'bg-green-500',
+      yellow: 'bg-yellow-500',
+      red: 'bg-red-500',
+      purple: 'bg-purple-500',
+      orange: 'bg-orange-500'
+    };
+    return colors[colorName] || 'bg-blue-500';
+  };
   
   return (
     <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
@@ -46,12 +71,15 @@ const BarChart = ({ data, title, color = 'blue' }) => {
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
               <div 
-                className={`h-2 rounded-full transition-all duration-700 bg-${color}-500`}
+                className={`h-2 rounded-full transition-all duration-700 ${getColorClass(color)}`}
                 style={{ width: `${(item.value / maxValue) * 100}%` }}
               />
             </div>
           </div>
         ))}
+      </div>
+      <div className="mt-3 pt-2 border-t text-center text-sm text-gray-500">
+        Total: {data.reduce((sum, item) => sum + item.value, 0)}
       </div>
     </div>
   );
@@ -60,6 +88,24 @@ const BarChart = ({ data, title, color = 'blue' }) => {
 // Componente de Gráfico de Pizza Simplificado
 const PieChart = ({ data, title }) => {
   const total = data.reduce((sum, item) => sum + item.value, 0);
+  
+  // Se não há dados, mostrar mensagem
+  if (total === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+        <h3 className="font-semibold text-gray-800 mb-4">{title}</h3>
+        <div className="flex flex-col items-center justify-center py-8">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm">Nenhum dado disponível</p>
+        </div>
+      </div>
+    );
+  }
+
   let currentAngle = 0;
   
   const colors = [
@@ -102,6 +148,8 @@ const PieChart = ({ data, title }) => {
                 d={pathData}
                 fill={colors[index % colors.length].bg}
                 className="transition-all duration-300 hover:opacity-80 cursor-pointer"
+                stroke="white"
+                strokeWidth="2"
               >
                 <title>{item.label}: {item.value} ({percentage.toFixed(1)}%)</title>
               </path>
@@ -121,6 +169,11 @@ const PieChart = ({ data, title }) => {
               <span className="font-semibold ml-auto">{item.value}</span>
             </div>
           ))}
+        </div>
+        
+        {/* Total */}
+        <div className="mt-3 pt-2 border-t text-center text-sm text-gray-500">
+          Total: {total}
         </div>
       </div>
     </div>
@@ -431,22 +484,16 @@ export default function DentistaDashboard() {
 
       {/* Gráficos - Primeira Linha */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {chamadosPorStatus.filter(s => s.value > 0).length > 0 && (
-          <PieChart data={chamadosPorStatus.filter(s => s.value > 0)} title="📊 Chamados por Status" />
-        )}
-        {chamadosPorPrioridade.filter(p => p.value > 0).length > 0 && (
-          <PieChart data={chamadosPorPrioridade.filter(p => p.value > 0)} title="⚠️ Chamados por Prioridade" />
-        )}
+        <PieChart data={chamadosPorStatus.filter(s => s.value > 0)} title="📊 Chamados por Status" />
+        <PieChart data={chamadosPorPrioridade.filter(p => p.value > 0)} title="⚠️ Chamados por Prioridade" />
       </div>
 
       {/* Gráficos - Segunda Linha */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {pedidosPorStatus.filter(p => p.value > 0).length > 0 && (
-          <BarChart data={pedidosPorStatus.filter(p => p.value > 0)} title="📦 Pedidos por Status" color="green" />
-        )}
+        <BarChart data={pedidosPorStatus.filter(p => p.value > 0)} title="📦 Pedidos por Status" color="green" />
         
         {/* Distribuição de Notas */}
-        {avaliacoes.length > 0 && (
+        {avaliacoes.length > 0 ? (
           <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
             <h3 className="font-semibold text-gray-800 mb-4">⭐ Distribuição das Avaliações</h3>
             <div className="space-y-3">
@@ -474,6 +521,15 @@ export default function DentistaDashboard() {
               <p className="text-sm text-gray-600">
                 Média geral: <span className="font-bold text-yellow-600 text-lg">{mediaAvaliacoes}</span> / 5
               </p>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+            <h3 className="font-semibold text-gray-800 mb-4">⭐ Distribuição das Avaliações</h3>
+            <div className="flex flex-col items-center justify-center py-8">
+              <StarIcon className="w-16 h-16 text-gray-300 mb-3" />
+              <p className="text-gray-500 text-sm">Nenhuma avaliação ainda</p>
+              <p className="text-xs text-gray-400 mt-1">Quando seus chamados forem concluídos, você poderá avaliá-los</p>
             </div>
           </div>
         )}

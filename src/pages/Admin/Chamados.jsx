@@ -46,6 +46,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import NovoChamadoModal from '../../components/Chamados/NovoChamadoModal';
+import ChatDoChamado from '../../components/ChatDoChamado';
 
 export default function AdminChamados() {
   const { userData } = useAuth();
@@ -75,10 +76,58 @@ export default function AdminChamados() {
     fim: ''
   });
   const [unidades, setUnidades] = useState([]);
+  // Chat states - adicione junto com os outros estados
+const [showChatModal, setShowChatModal] = useState(false);
+const [chamadoSelecionadoChat, setChamadoSelecionadoChat] = useState(null);
+const [mensagensNaoLidas, setMensagensNaoLidas] = useState({});
+
 
   // PAGINAÇÃO
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
+
+  // Buscar mensagens não lidas para cada chamado - adicione após os outros useEffects
+useEffect(() => {
+  if (!chamados.length) return;
+  
+  const unsubscribes = [];
+  
+  chamados.forEach(chamado => {
+    const chatCollection = `mensagens_chamado_${chamado.id}`;
+    const q = query(
+      collection(db, chatCollection),
+      where('lida', '==', false),
+      where('remetenteId', '!=', userData?.uid)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setMensagensNaoLidas(prev => ({
+        ...prev,
+        [chamado.id]: snapshot.size
+      }));
+    });
+    
+    unsubscribes.push(unsubscribe);
+  });
+  
+  return () => {
+    unsubscribes.forEach(unsub => unsub());
+  };
+}, [chamados]);
+// Listener para abrir chat via evento - adicione após os outros useEffects
+useEffect(() => {
+  const handleAbrirChat = (event) => {
+    const { chamadoId } = event.detail;
+    const chamado = chamados.find(c => c.id === chamadoId);
+    if (chamado) {
+      setChamadoSelecionadoChat(chamado);
+      setShowChatModal(true);
+    }
+  };
+
+  window.addEventListener('abrirChat', handleAbrirChat);
+  return () => window.removeEventListener('abrirChat', handleAbrirChat);
+}, [chamados]);
 
   // ========== COMPONENTE INTERNO MediaViewer ==========
   const MediaViewer = ({ src, type }) => {
@@ -856,18 +905,35 @@ export default function AdminChamados() {
                         {formatarData(chamado.dataCriacao)}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button onClick={() => { setSelectedChamado(chamado); setShowDetailsModal(true); }} className="text-blue-600 hover:text-blue-800">
-                            <EyeIcon className="w-5 h-5" />
-                          </button>
-                          <button onClick={() => { setSelectedChamado(chamado); setShowEditModal(true); }} className="text-green-600 hover:text-green-800">
-                            <PencilIcon className="w-5 h-5" />
-                          </button>
-                          <button onClick={() => { setSelectedChamado(chamado); setShowDeleteModal(true); }} className="text-red-600 hover:text-red-800">
-                            <TrashIcon className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
+  <div className="flex gap-2">
+    <button onClick={() => { setSelectedChamado(chamado); setShowDetailsModal(true); }} className="text-blue-600 hover:text-blue-800">
+      <EyeIcon className="w-5 h-5" />
+    </button>
+    <button onClick={() => { setSelectedChamado(chamado); setShowEditModal(true); }} className="text-green-600 hover:text-green-800">
+      <PencilIcon className="w-5 h-5" />
+    </button>
+    {/* Botão de Chat */}
+    <button
+      onClick={() => {
+        setChamadoSelecionadoChat(chamado);
+        setShowChatModal(true);
+      }}
+      className="text-purple-600 hover:text-purple-800 relative"
+      title="Chat"
+    >
+      <ChatBubbleLeftIcon className="w-5 h-5" />
+      {mensagensNaoLidas[chamado.id] > 0 && (
+        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+          {mensagensNaoLidas[chamado.id]}
+        </span>
+      )}
+    </button>
+    <button onClick={() => { setSelectedChamado(chamado); setShowDeleteModal(true); }} className="text-red-600 hover:text-red-800">
+      <TrashIcon className="w-5 h-5" />
+    </button>
+  </div>
+</td>
+
                     </tr>
                   ))}
                 </tbody>
@@ -1301,6 +1367,19 @@ export default function AdminChamados() {
           </div>
         </div>
       )}
+      {/* Modal do Chat */}
+{showChatModal && chamadoSelecionadoChat && (
+  <ChatDoChamado
+    chamado={chamadoSelecionadoChat}
+    onClose={() => {
+      setShowChatModal(false);
+      setChamadoSelecionadoChat(null);
+    }}
+    onNovaMensagem={() => {
+      // Atualizar contador de mensagens não lidas
+    }}
+  />
+)}
     </div>
   );
 }
