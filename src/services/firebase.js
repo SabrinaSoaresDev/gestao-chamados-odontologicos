@@ -12,8 +12,15 @@ const firebaseConfig = {
   appId: "1:145169990092:web:c548d634ccaa5209205d69",
   measurementId: "G-V5SKNDWKP6"
 };
+// Validação básica
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'undefined') {
+  console.error('❌ Firebase: API Key não configurada! Verifique o arquivo .env');
+}
 
+// Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+console.log('✅ Firebase inicializado com sucesso');

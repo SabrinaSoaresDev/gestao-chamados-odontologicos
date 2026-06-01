@@ -17,6 +17,8 @@ import {
   BuildingOfficeIcon,
   CheckCircleIcon,
   ClockIcon,
+  CubeIcon,           // Substitui PackageIcon
+  ShoppingCartIcon,    // Adicionado
   ExclamationTriangleIcon,
   UserPlusIcon
 } from '@heroicons/react/24/outline';
@@ -26,14 +28,12 @@ import {
   query, 
   where, 
   onSnapshot, 
-  orderBy, 
   limit, 
   updateDoc, 
   doc,
   writeBatch,
   addDoc,
-  serverTimestamp,
-  getDocs
+  serverTimestamp
 } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 
@@ -48,12 +48,9 @@ export default function Layout({ children }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Função para criar notificação no Firestore (com tratamento de erro - CORRIGIDA)
+  // Função para criar notificação no Firestore
   const createNotification = async (userId, titulo, mensagem, tipo, link = null, chamadoId = null) => {
     try {
-      // REMOVIDA a consulta duplicada que causava erro de índice
-      // Agora apenas cria a notificação sem verificar duplicatas complexas
-      
       const notificacaoData = {
         userId: userId,
         titulo: titulo,
@@ -83,6 +80,11 @@ export default function Layout({ children }) {
         lida: true,
         lidaEm: new Date()
       });
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === notificationId ? { ...n, lida: true } : n
+        )
+      );
     } catch (error) {
       console.error('Erro ao marcar notificação como lida:', error);
       setNotifications(prev =>
@@ -156,14 +158,12 @@ export default function Layout({ children }) {
     }
   };
 
-  // CORREÇÃO PRINCIPAL: Carregar notificações SEM orderBy (para evitar índice)
+  // Carregar notificações
   useEffect(() => {
     if (!userData?.uid) return;
 
     console.log('Carregando notificações para usuário:', userData.uid);
 
-    // REMOVIDO o orderBy('data', 'desc') que causava erro de índice
-    // Agora busca apenas com where, sem ordenação na query
     const q = query(
       collection(db, 'notificacoes'),
       where('userId', '==', userData.uid),
@@ -178,7 +178,7 @@ export default function Layout({ children }) {
           data: doc.data().data?.toDate?.() || doc.data().createdAt?.toDate?.() || new Date()
         }));
         
-        // Ordenar manualmente no JavaScript (mais recentes primeiro)
+        // Ordenar manualmente no JavaScript
         notificacoes = notificacoes.sort((a, b) => {
           const dateA = a.data instanceof Date ? a.data : new Date(a.data);
           const dateB = b.data instanceof Date ? b.data : new Date(b.data);
@@ -192,85 +192,11 @@ export default function Layout({ children }) {
       },
       (error) => {
         console.error('Erro ao carregar notificações:', error);
-        if (error.code === 'permission-denied') {
-          console.log('Sem permissão para ler notificações. Verifique as regras do Firebase.');
-        }
       }
     );
 
     return () => unsubscribe();
   }, [userData?.uid]);
-
-  // Monitorar eventos em tempo real para criar notificações - CORRIGIDO
-  useEffect(() => {
-    if (!userData || userData.role !== 'admin') return;
-
-    let unsubscribeChamados;
-    let unsubscribeUsuarios;
-
-    // Admin: monitorar chamados urgentes (SEM orderBy para evitar índice)
-    const chamadosQuery = query(
-      collection(db, 'chamados'),
-      where('prioridade', 'in', ['alta', 'emergencial']),
-      where('status', 'in', ['aberto', 'em_andamento'])
-    );
-
-    unsubscribeChamados = onSnapshot(chamadosQuery, (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === 'added') {
-          const chamado = change.doc.data();
-          
-          // Verificar se já existe notificação para este chamado (busca simples)
-          const existingNotif = notifications.find(n => n.chamadoId === change.doc.id);
-          if (!existingNotif) {
-            await createNotification(
-              userData.uid,
-              'Chamado Urgente',
-              `${chamado.titulo} - Prioridade ${chamado.prioridade}`,
-              'chamado_urgente',
-              '/admin/chamados',
-              change.doc.id
-            );
-          }
-        }
-      });
-    }, (error) => {
-      console.error('Erro no listener de chamados:', error);
-    });
-
-    // Admin: monitorar novos usuários (SEM orderBy para evitar índice)
-    const usuariosQuery = query(
-      collection(db, 'usuarios')
-    );
-
-    unsubscribeUsuarios = onSnapshot(usuariosQuery, (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === 'added') {
-          const usuario = change.doc.data();
-          
-          if (usuario.uid !== userData.uid) {
-            const existingNotif = notifications.find(n => n.id === `usuario-${change.doc.id}`);
-            if (!existingNotif) {
-              await createNotification(
-                userData.uid,
-                'Novo Usuário',
-                `${usuario.nome} (${usuario.role}) acabou de se cadastrar`,
-                'novo_usuario',
-                '/admin/usuarios'
-              );
-            }
-          }
-        }
-      });
-    }, (error) => {
-      console.error('Erro no listener de usuários:', error);
-    });
-
-    return () => {
-      if (unsubscribeChamados) unsubscribeChamados();
-      if (unsubscribeUsuarios) unsubscribeUsuarios();
-    };
-  }, [userData, notifications]);
 
   const handleLogout = async () => {
     await logout();
@@ -315,6 +241,16 @@ export default function Layout({ children }) {
       roles: ['admin', 'dentista', 'tecnico']
     }
   ];
+  
+  if (userData?.role === 'dentista') {
+    menuItems.push({
+      id: 'pedidos-materiais',
+      name: 'Pedidos de Materiais',
+      icon: ShoppingCartIcon,
+      path: '/dentista/pedidos-materiais',
+      roles: ['dentista']
+    });
+  }
 
   if (userData?.role === 'tecnico') {
     menuItems.push({
@@ -333,6 +269,20 @@ export default function Layout({ children }) {
         name: 'Usuários',
         icon: UsersIcon,
         path: '/admin/usuarios',
+        roles: ['admin']
+      },
+      {
+        id: 'produtos',
+        name: 'Produtos',
+        icon: CubeIcon,  // Usando CubeIcon ao invés de PackageIcon
+        path: '/admin/produtos',
+        roles: ['admin']
+      },
+      {
+        id: 'pedidos',
+        name: 'Pedidos',
+        icon: ShoppingCartIcon,
+        path: '/admin/pedidos',
         roles: ['admin']
       },
       {
@@ -397,7 +347,6 @@ export default function Layout({ children }) {
 
   return (
     <div className="min-h-screen bg-gray-800">
-      {/* Header */}
       <header className="bg-gray-700 border-b border-gray-600 sticky top-0 z-30">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -418,7 +367,7 @@ export default function Layout({ children }) {
               
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-white rounded-lg flex items-center justify-center shadow-lg">
-                  <img src="/logo.ico" alt="Logo" />
+                  <img src="/logo.ico" alt="Logo" className="w-6 h-6" />
                 </div>
                 <h1 className="text-lg font-bold text-white">Ortodonsist</h1>
               </div>
@@ -434,7 +383,6 @@ export default function Layout({ children }) {
             </div>
 
             <div className="flex items-center space-x-2">
-              {/* Notificações */}
               <div className="relative">
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
@@ -505,7 +453,6 @@ export default function Layout({ children }) {
                 )}
               </div>
               
-              {/* Menu do Usuário */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
@@ -546,13 +493,12 @@ export default function Layout({ children }) {
       </header>
 
       <div className="flex relative">
-        {/* Sidebar */}
         <aside className={`
           lg:block lg:static lg:transform-none
           fixed top-16 bottom-0 left-0 overflow-y-auto z-20 bg-gray-900 shadow-xl min-h-screen border-r border-gray-700
           transform transition-all duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          ${sidebarCollapsed ? 'lg:w-15' : 'lg:w-56'}
+          ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-56'}
           w-56
         `}>
           <nav className="mt-4 px-2">
@@ -588,7 +534,7 @@ export default function Layout({ children }) {
           </nav>
         </aside>
 
-        {/* Overlay para mobile */}
+          {/* Overlay para mobile */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/50 z-10 lg:hidden"

@@ -13,32 +13,124 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
   MagnifyingGlassIcon, 
   PlusIcon,
-  EyeIcon,
   ClockIcon,
   CheckCircleIcon,
   ArrowPathIcon,
   UserCircleIcon,
   CalendarIcon,
-  ChatBubbleLeftIcon,
-  PhotoIcon,
   ExclamationTriangleIcon,
   WrenchScrewdriverIcon,
   StarIcon,
   XMarkIcon,
-  FunnelIcon,
   DocumentTextIcon,
-  PhoneIcon,
-  ChartBarIcon,
-  BoltIcon,
-  ShieldCheckIcon
+  ShoppingCartIcon,
+  TruckIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
 import NovoChamadoModal from '../../components/Chamados/NovoChamadoModal';
 
+// Componente de Gráfico de Barras Simplificado
+const BarChart = ({ data, title, color = 'blue' }) => {
+  const maxValue = Math.max(...data.map(d => d.value), 1);
+  
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+      <h3 className="font-semibold text-gray-800 mb-4">{title}</h3>
+      <div className="space-y-3">
+        {data.map((item, index) => (
+          <div key={index}>
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-gray-600">{item.label}</span>
+              <span className="font-semibold text-gray-800">{item.value}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div 
+                className={`h-2 rounded-full transition-all duration-700 bg-${color}-500`}
+                style={{ width: `${(item.value / maxValue) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Componente de Gráfico de Pizza Simplificado
+const PieChart = ({ data, title }) => {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  let currentAngle = 0;
+  
+  const colors = [
+    { bg: '#3B82F6', hover: '#2563EB' }, // blue
+    { bg: '#10B981', hover: '#059669' }, // green
+    { bg: '#F59E0B', hover: '#D97706' }, // yellow
+    { bg: '#EF4444', hover: '#DC2626' }, // red
+    { bg: '#8B5CF6', hover: '#7C3AED' }, // purple
+    { bg: '#F97316', hover: '#EA580C' }  // orange
+  ];
+  
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+      <h3 className="font-semibold text-gray-800 mb-4">{title}</h3>
+      <div className="flex flex-col items-center">
+        {/* Gráfico de Pizza Simples usando SVG */}
+        <svg width="150" height="150" viewBox="0 0 150 150" className="mb-4">
+          {data.map((item, index) => {
+            const percentage = (item.value / total) * 100;
+            const angle = (percentage / 100) * 360;
+            const startAngle = currentAngle;
+            const endAngle = startAngle + angle;
+            currentAngle = endAngle;
+            
+            const startRad = (startAngle * Math.PI) / 180;
+            const endRad = (endAngle * Math.PI) / 180;
+            
+            const x1 = 75 + 60 * Math.cos(startRad);
+            const y1 = 75 + 60 * Math.sin(startRad);
+            const x2 = 75 + 60 * Math.cos(endRad);
+            const y2 = 75 + 60 * Math.sin(endRad);
+            
+            const largeArc = angle > 180 ? 1 : 0;
+            
+            const pathData = `M 75 75 L ${x1} ${y1} A 60 60 0 ${largeArc} 1 ${x2} ${y2} Z`;
+            
+            return (
+              <path
+                key={index}
+                d={pathData}
+                fill={colors[index % colors.length].bg}
+                className="transition-all duration-300 hover:opacity-80 cursor-pointer"
+              >
+                <title>{item.label}: {item.value} ({percentage.toFixed(1)}%)</title>
+              </path>
+            );
+          })}
+        </svg>
+        
+        {/* Legenda */}
+        <div className="grid grid-cols-2 gap-2 w-full mt-2">
+          {data.map((item, index) => (
+            <div key={index} className="flex items-center gap-2 text-xs">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: colors[index % colors.length].bg }}
+              />
+              <span className="text-gray-600">{item.label}</span>
+              <span className="font-semibold ml-auto">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function DentistaDashboard() {
   const { userData } = useAuth();
   const [chamados, setChamados] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
   const [filteredChamados, setFilteredChamados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,10 +144,11 @@ export default function DentistaDashboard() {
     nota: 5,
     comentario: ''
   });
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
+  const [viewMode, setViewMode] = useState('grid');
 
+  // Buscar chamados do dentista
   useEffect(() => {
-    if (!userData) return;
+    if (!userData?.uid) return;
 
     const q = query(
       collection(db, 'chamados'),
@@ -67,14 +160,39 @@ export default function DentistaDashboard() {
       const chamadosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        dataCriacao: doc.data().dataCriacao?.toDate()
+        dataCriacao: doc.data().dataCriacao?.toDate(),
+        dataConclusao: doc.data().dataConclusao?.toDate()
       }));
       setChamados(chamadosData);
       setFilteredChamados(chamadosData);
-      setLoading(false);
     }, (error) => {
       console.error('Erro ao carregar chamados:', error);
       toast.error('Erro ao carregar seus chamados');
+    });
+
+    return () => unsubscribe();
+  }, [userData]);
+
+  // Buscar pedidos do dentista
+  useEffect(() => {
+    if (!userData?.uid) return;
+
+    const q = query(
+      collection(db, 'pedidos'),
+      where('dentistaId', '==', userData.uid),
+      orderBy('dataPedido', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const pedidosData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        dataPedido: doc.data().dataPedido?.toDate()
+      }));
+      setPedidos(pedidosData);
+      setLoading(false);
+    }, (error) => {
+      console.error('Erro ao carregar pedidos:', error);
       setLoading(false);
     });
 
@@ -106,6 +224,11 @@ export default function DentistaDashboard() {
   const handleAvaliarChamado = async () => {
     if (!selectedChamado) return;
 
+    if (!avaliacao.comentario.trim()) {
+      toast.error('Por favor, deixe um comentário sobre o atendimento');
+      return;
+    }
+
     try {
       const chamadoRef = doc(db, 'chamados', selectedChamado.id);
       await updateDoc(chamadoRef, {
@@ -115,18 +238,20 @@ export default function DentistaDashboard() {
           data: new Date(),
           avaliador: userData.nome
         },
+        status: 'avaliado',
         historico: [
           ...(selectedChamado.historico || []),
           {
             data: new Date(),
-            acao: `Chamado avaliado com nota ${avaliacao.nota}`,
+            acao: `Chamado avaliado com nota ${avaliacao.nota}/5`,
             usuario: userData.nome,
-            tipo: 'avaliacao'
+            tipo: 'avaliacao',
+            detalhes: avaliacao.comentario
           }
         ]
       });
 
-      toast.success('Avaliação enviada com sucesso!');
+      toast.success(`Avaliação enviada! Nota: ${avaliacao.nota}/5`);
       setShowAvaliarModal(false);
       setAvaliacao({ nota: 5, comentario: '' });
     } catch (error) {
@@ -135,61 +260,50 @@ export default function DentistaDashboard() {
     }
   };
 
-  const handleCancelarChamado = async (chamadoId) => {
-    if (!window.confirm('Tem certeza que deseja cancelar este chamado?')) return;
+  // Estatísticas para os gráficos
+  const chamadosPorStatus = [
+    { label: 'Abertos', value: chamados.filter(c => c.status === 'aberto').length },
+    { label: 'Em Andamento', value: chamados.filter(c => c.status === 'em_andamento').length },
+    { label: 'Concluídos', value: chamados.filter(c => c.status === 'concluido').length },
+    { label: 'Avaliados', value: chamados.filter(c => c.status === 'avaliado').length },
+    { label: 'Cancelados', value: chamados.filter(c => c.status === 'cancelado').length }
+  ];
 
-    try {
-      const chamadoRef = doc(db, 'chamados', chamadoId);
-      await updateDoc(chamadoRef, {
-        status: 'cancelado',
-        historico: [
-          ...(chamados.find(c => c.id === chamadoId)?.historico || []),
-          {
-            data: new Date(),
-            acao: 'Chamado cancelado pelo solicitante',
-            usuario: userData.nome,
-            tipo: 'cancelamento'
-          }
-        ]
-      });
+  const chamadosPorPrioridade = [
+    { label: 'Emergencial', value: chamados.filter(c => c.prioridade === 'emergencial').length },
+    { label: 'Alta', value: chamados.filter(c => c.prioridade === 'alta').length },
+    { label: 'Média', value: chamados.filter(c => c.prioridade === 'media').length },
+    { label: 'Baixa', value: chamados.filter(c => c.prioridade === 'baixa').length }
+  ];
 
-      toast.success('Chamado cancelado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao cancelar chamado:', error);
-      toast.error('Erro ao cancelar chamado');
-    }
-  };
+  const pedidosPorStatus = [
+    { label: 'Pendentes', value: pedidos.filter(p => p.status === 'pendente').length },
+    { label: 'Aprovados', value: pedidos.filter(p => p.status === 'aprovado').length },
+    { label: 'Entregues', value: pedidos.filter(p => p.status === 'entregue').length },
+    { label: 'Cancelados', value: pedidos.filter(p => p.status === 'cancelado').length }
+  ];
 
-  // Estatísticas
-  const stats = {
-    total: chamados.length,
-    abertos: chamados.filter(c => c.status === 'aberto').length,
-    andamento: chamados.filter(c => c.status === 'em_andamento').length,
-    concluidos: chamados.filter(c => c.status === 'concluido').length,
-    cancelados: chamados.filter(c => c.status === 'cancelado').length,
-    urgentes: chamados.filter(c => c.prioridade === 'alta' || c.prioridade === 'emergencial').length,
-    tempoMedio: calcularTempoMedio()
-  };
+  const avaliacoes = chamados.filter(c => c.avaliacao);
+  const mediaAvaliacoes = avaliacoes.length > 0 
+    ? (avaliacoes.reduce((acc, c) => acc + c.avaliacao.nota, 0) / avaliacoes.length).toFixed(1)
+    : 0;
 
-  function calcularTempoMedio() {
-    const concluidos = chamados.filter(c => c.status === 'concluido' && c.dataCriacao && c.dataConclusao);
-    if (concluidos.length === 0) return 0;
-    
-    const totalHoras = concluidos.reduce((acc, c) => {
-      const diff = (c.dataConclusao - c.dataCriacao) / (1000 * 60 * 60);
-      return acc + diff;
-    }, 0);
-    
-    return (totalHoras / concluidos.length).toFixed(1);
-  }
+  const distribuicaoNotas = [
+    { nota: 5, quantidade: avaliacoes.filter(a => a.avaliacao.nota === 5).length },
+    { nota: 4, quantidade: avaliacoes.filter(a => a.avaliacao.nota === 4).length },
+    { nota: 3, quantidade: avaliacoes.filter(a => a.avaliacao.nota === 3).length },
+    { nota: 2, quantidade: avaliacoes.filter(a => a.avaliacao.nota === 2).length },
+    { nota: 1, quantidade: avaliacoes.filter(a => a.avaliacao.nota === 1).length }
+  ];
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'aberto': return 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-white';
-      case 'em_andamento': return 'bg-gradient-to-r from-blue-400 to-blue-500 text-white';
-      case 'concluido': return 'bg-gradient-to-r from-green-400 to-green-500 text-white';
-      case 'cancelado': return 'bg-gradient-to-r from-gray-400 to-gray-500 text-white';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'aberto': return 'bg-yellow-500';
+      case 'em_andamento': return 'bg-blue-500';
+      case 'concluido': return 'bg-green-500';
+      case 'avaliado': return 'bg-purple-500';
+      case 'cancelado': return 'bg-gray-500';
+      default: return 'bg-gray-300';
     }
   };
 
@@ -198,6 +312,7 @@ export default function DentistaDashboard() {
       case 'aberto': return <ClockIcon className="w-4 h-4" />;
       case 'em_andamento': return <ArrowPathIcon className="w-4 h-4" />;
       case 'concluido': return <CheckCircleIcon className="w-4 h-4" />;
+      case 'avaliado': return <StarIcon className="w-4 h-4" />;
       case 'cancelado': return <XMarkIcon className="w-4 h-4" />;
       default: return null;
     }
@@ -208,6 +323,7 @@ export default function DentistaDashboard() {
       case 'aberto': return 'Aberto';
       case 'em_andamento': return 'Em Andamento';
       case 'concluido': return 'Concluído';
+      case 'avaliado': return 'Avaliado';
       case 'cancelado': return 'Cancelado';
       default: return status;
     }
@@ -215,26 +331,20 @@ export default function DentistaDashboard() {
 
   const getPrioridadeColor = (prioridade) => {
     switch(prioridade) {
-      case 'alta':
-      case 'emergencial':
-        return 'bg-gradient-to-r from-red-400 to-red-500 text-white';
-      case 'media':
-        return 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-white';
-      case 'baixa':
-        return 'bg-gradient-to-r from-green-400 to-green-500 text-white';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'emergencial': return 'bg-red-600 text-white';
+      case 'alta': return 'bg-red-500 text-white';
+      case 'media': return 'bg-yellow-500 text-white';
+      case 'baixa': return 'bg-green-500 text-white';
+      default: return 'bg-gray-300';
     }
   };
 
   const formatDate = (date) => {
     if (!date) return '';
-    return new Date(date).toLocaleDateString('pt-BR', {
+    return date.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: 'numeric'
     });
   };
 
@@ -242,368 +352,451 @@ export default function DentistaDashboard() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <div className="relative">
-            <div className="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-          </div>
-          <p className="text-gray-500 font-medium">Carregando seu dashboard...</p>
+          <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">Carregando dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header com saudação personalizada */}
+    <div className="space-y-6 p-4">
+      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl shadow-xl p-6 text-white">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Olá, Dr(a). {userData?.nome?.split(' ')[0]}! </h1>
-            <p className="text-blue-100">Bem-vindo(a) ao seu painel de chamados</p>
+            <h1 className="text-2xl font-bold mb-2">
+              Olá, Dr(a). {userData?.nome?.split(' ')[0]}!
+            </h1>
+            <p className="text-blue-100">Acompanhe seus chamados e pedidos</p>
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 rounded-xl hover:bg-blue-50 transition transform hover:scale-105 shadow-lg font-semibold"
+            className="flex items-center gap-2 px-5 py-2.5 bg-white text-blue-600 rounded-xl hover:bg-blue-50 transition shadow-lg font-semibold"
           >
             <PlusIcon className="w-5 h-5" />
             Novo Chamado
           </button>
         </div>
-        
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-          <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
-            <p className="text-sm text-blue-200">Taxa de Resolução</p>
-            <p className="text-2xl font-bold">
-              {stats.total > 0 ? ((stats.concluidos / stats.total) * 100).toFixed(1) : 0}%
-            </p>
-          </div>
-          <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
-            <p className="text-sm text-blue-200">Tempo Médio</p>
-            <p className="text-2xl font-bold">{stats.tempoMedio}h</p>
-          </div>
-          <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
-            <p className="text-sm text-blue-200">Satisfação</p>
-            <p className="text-2xl font-bold">
-              {chamados.filter(c => c.avaliacao).length > 0 
-                ? (chamados.filter(c => c.avaliacao).reduce((acc, c) => acc + c.avaliacao.nota, 0) / chamados.filter(c => c.avaliacao).length).toFixed(1)
-                : '0.0'}
-            </p>
-          </div>
-          <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
-            <p className="text-sm text-blue-200">Ativos</p>
-            <p className="text-2xl font-bold">{stats.abertos + stats.andamento}</p>
-          </div>
-        </div>
       </div>
 
-      {/* Cards de Estatísticas Detalhadas */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100 hover:shadow-xl transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DocumentTextIcon className="w-5 h-5 text-blue-600" />
-            </div>
-            <span className="text-2xl font-bold text-gray-800">{stats.total}</span>
+      {/* Cards Resumo Rápidos */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <DocumentTextIcon className="w-8 h-8 text-blue-500" />
+            <span className="text-2xl font-bold text-gray-800">{chamados.length}</span>
           </div>
-          <p className="text-sm text-gray-600">Total de Chamados</p>
+          <p className="text-sm text-gray-600">Total Chamados</p>
           <div className="mt-2 h-1 bg-gray-100 rounded-full">
             <div className="h-1 bg-blue-500 rounded-full" style={{ width: '100%' }}></div>
           </div>
         </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100 hover:shadow-xl transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <ClockIcon className="w-5 h-5 text-yellow-600" />
-            </div>
-            <span className="text-2xl font-bold text-yellow-600">{stats.abertos}</span>
+        
+        <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <ShoppingCartIcon className="w-8 h-8 text-green-500" />
+            <span className="text-2xl font-bold text-gray-800">{pedidos.length}</span>
           </div>
-          <p className="text-sm text-gray-600">Abertos</p>
+          <p className="text-sm text-gray-600">Total Pedidos</p>
           <div className="mt-2 h-1 bg-gray-100 rounded-full">
-            <div className="h-1 bg-yellow-500 rounded-full" style={{ width: `${(stats.abertos / stats.total) * 100 || 0}%` }}></div>
+            <div className="h-1 bg-green-500 rounded-full" style={{ width: '100%' }}></div>
           </div>
         </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100 hover:shadow-xl transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <ArrowPathIcon className="w-5 h-5 text-blue-600" />
-            </div>
-            <span className="text-2xl font-bold text-blue-600">{stats.andamento}</span>
+        
+        <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <StarIcon className="w-8 h-8 text-yellow-500" />
+            <span className="text-2xl font-bold text-gray-800">{mediaAvaliacoes}</span>
+          </div>
+          <p className="text-sm text-gray-600">Média Avaliações</p>
+          <div className="mt-2 h-1 bg-gray-100 rounded-full">
+            <div className="h-1 bg-yellow-500 rounded-full" style={{ width: `${(mediaAvaliacoes / 5) * 100}%` }}></div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <ClockIcon className="w-8 h-8 text-orange-500" />
+            <span className="text-2xl font-bold text-gray-800">
+              {chamados.filter(c => c.status === 'aberto' || c.status === 'em_andamento').length}
+            </span>
           </div>
           <p className="text-sm text-gray-600">Em Andamento</p>
           <div className="mt-2 h-1 bg-gray-100 rounded-full">
-            <div className="h-1 bg-blue-500 rounded-full" style={{ width: `${(stats.andamento / stats.total) * 100 || 0}%` }}></div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100 hover:shadow-xl transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircleIcon className="w-5 h-5 text-green-600" />
-            </div>
-            <span className="text-2xl font-bold text-green-600">{stats.concluidos}</span>
-          </div>
-          <p className="text-sm text-gray-600">Concluídos</p>
-          <div className="mt-2 h-1 bg-gray-100 rounded-full">
-            <div className="h-1 bg-green-500 rounded-full" style={{ width: `${(stats.concluidos / stats.total) * 100 || 0}%` }}></div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100 hover:shadow-xl transition">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
-            </div>
-            <span className="text-2xl font-bold text-red-600">{stats.urgentes}</span>
-          </div>
-          <p className="text-sm text-gray-600">Urgentes</p>
-          <div className="mt-2 h-1 bg-gray-100 rounded-full">
-            <div className="h-1 bg-red-500 rounded-full" style={{ width: `${(stats.urgentes / stats.total) * 100 || 0}%` }}></div>
+            <div className="h-1 bg-orange-500 rounded-full" style={{ width: `${(chamados.filter(c => c.status === 'aberto' || c.status === 'em_andamento').length / chamados.length) * 100 || 0}%` }}></div>
           </div>
         </div>
       </div>
 
-      {/* Barra de Ferramentas */}
+      {/* Gráficos - Primeira Linha */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {chamadosPorStatus.filter(s => s.value > 0).length > 0 && (
+          <PieChart data={chamadosPorStatus.filter(s => s.value > 0)} title="📊 Chamados por Status" />
+        )}
+        {chamadosPorPrioridade.filter(p => p.value > 0).length > 0 && (
+          <PieChart data={chamadosPorPrioridade.filter(p => p.value > 0)} title="⚠️ Chamados por Prioridade" />
+        )}
+      </div>
+
+      {/* Gráficos - Segunda Linha */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {pedidosPorStatus.filter(p => p.value > 0).length > 0 && (
+          <BarChart data={pedidosPorStatus.filter(p => p.value > 0)} title="📦 Pedidos por Status" color="green" />
+        )}
+        
+        {/* Distribuição de Notas */}
+        {avaliacoes.length > 0 && (
+          <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+            <h3 className="font-semibold text-gray-800 mb-4">⭐ Distribuição das Avaliações</h3>
+            <div className="space-y-3">
+              {distribuicaoNotas.map((item, index) => (
+                <div key={index}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-yellow-500">{item.nota} ★</span>
+                      <span className="text-gray-600">{item.quantidade} avaliações</span>
+                    </div>
+                    <span className="font-semibold text-gray-800">
+                      {avaliacoes.length > 0 ? ((item.quantidade / avaliacoes.length) * 100).toFixed(1) : 0}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div 
+                      className="h-2 rounded-full transition-all duration-700 bg-yellow-500"
+                      style={{ width: `${avaliacoes.length > 0 ? (item.quantidade / avaliacoes.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-3 border-t text-center">
+              <p className="text-sm text-gray-600">
+                Média geral: <span className="font-bold text-yellow-600 text-lg">{mediaAvaliacoes}</span> / 5
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Últimos Chamados e Pedidos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Últimos Chamados */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b bg-gray-50">
+            <h3 className="font-semibold text-gray-800">📋 Últimos Chamados</h3>
+          </div>
+          <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+            {chamados.slice(0, 5).map((chamado) => (
+              <div key={chamado.id} className="p-4 hover:bg-gray-50 cursor-pointer transition"
+                onClick={() => {
+                  setSelectedChamado(chamado);
+                  setShowDetailsModal(true);
+                }}>
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-800">{chamado.titulo}</p>
+                    <p className="text-xs text-gray-500">{chamado.equipamento}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${getPrioridadeColor(chamado.prioridade)}`}>
+                        {chamado.prioridade}
+                      </span>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white ${getStatusColor(chamado.status)}`}>
+                        {getStatusIcon(chamado.status)}
+                        {getStatusText(chamado.status)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">{formatDate(chamado.dataCriacao)}</p>
+                    {chamado.avaliacao && (
+                      <div className="flex items-center gap-1 text-xs mt-1">
+                        <StarIconSolid className="w-3 h-3 text-yellow-500" />
+                        <span>{chamado.avaliacao.nota}/5</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {chamados.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                Nenhum chamado encontrado
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Últimos Pedidos */}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b bg-gray-50">
+            <h3 className="font-semibold text-gray-800">📦 Últimos Pedidos</h3>
+          </div>
+          <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+            {pedidos.slice(0, 5).map((pedido) => (
+              <div key={pedido.id} className="p-4 hover:bg-gray-50 transition">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium text-gray-800">
+                      {pedido.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}
+                    </p>
+                    <p className="text-xs text-gray-500">Unidade: {pedido.unidade}</p>
+                    <p className="text-xs text-gray-500">{pedido.itens?.length || 0} itens</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+                      pedido.status === 'pendente' ? 'bg-yellow-100 text-yellow-800' :
+                      pedido.status === 'aprovado' ? 'bg-blue-100 text-blue-800' :
+                      pedido.status === 'entregue' ? 'bg-green-100 text-green-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {pedido.status === 'pendente' && <ClockIcon className="w-3 h-3" />}
+                      {pedido.status === 'aprovado' && <CheckCircleIcon className="w-3 h-3" />}
+                      {pedido.status === 'entregue' && <TruckIcon className="w-3 h-3" />}
+                      {pedido.status}
+                    </span>
+                    <p className="text-xs text-gray-500 mt-1">{formatDate(pedido.dataPedido)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {pedidos.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                Nenhum pedido encontrado
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros e Lista de Chamados */}
       <div className="bg-white rounded-xl shadow-lg p-4 border border-gray-100">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar por título, equipamento ou ID..."
+              placeholder="Buscar chamados..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
           
-          <div className="flex gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="todos">Todos Status</option>
-              <option value="aberto">Abertos</option>
-              <option value="em_andamento">Em Andamento</option>
-              <option value="concluido">Concluídos</option>
-              <option value="cancelado">Cancelados</option>
-            </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-4 py-2 border border-gray-200 rounded-lg"
+          >
+            <option value="todos">Todos Status</option>
+            <option value="aberto">Abertos</option>
+            <option value="em_andamento">Em Andamento</option>
+            <option value="concluido">Concluídos</option>
+            <option value="avaliado">Avaliados</option>
+            <option value="cancelado">Cancelados</option>
+          </select>
 
-            <select
-              value={filterPrioridade}
-              onChange={(e) => setFilterPrioridade(e.target.value)}
-              className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              <option value="todos">Todas Prioridades</option>
-              <option value="baixa">Baixa</option>
-              <option value="media">Média</option>
-              <option value="alta">Alta</option>
-              <option value="emergencial">Emergencial</option>
-            </select>
-
-            <div className="flex border border-gray-200 rounded-xl overflow-hidden">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-3 ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-3 ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          <select
+            value={filterPrioridade}
+            onChange={(e) => setFilterPrioridade(e.target.value)}
+            className="px-4 py-2 border border-gray-200 rounded-lg"
+          >
+            <option value="todos">Todas Prioridades</option>
+            <option value="baixa">Baixa</option>
+            <option value="media">Média</option>
+            <option value="alta">Alta</option>
+            <option value="emergencial">Emergencial</option>
+          </select>
         </div>
       </div>
 
-      {/* Grid/Lista de Chamados */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredChamados.map((chamado) => (
-            <div
-              key={chamado.id}
-              className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 cursor-pointer group"
-              onClick={() => {
-                setSelectedChamado(chamado);
-                setShowDetailsModal(true);
-              }}
-            >
-              <div className="p-5">
-                {/* Header com prioridade e ID */}
-                <div className="flex justify-between items-start mb-3">
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getPrioridadeColor(chamado.prioridade)}`}>
-                    {chamado.prioridade}
-                  </span>
-                  <span className="text-xs text-gray-400">#{chamado.id?.slice(-6)}</span>
+      {/* Lista de Chamados */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredChamados.map((chamado) => (
+          <div
+            key={chamado.id}
+            className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 hover:shadow-xl transition cursor-pointer"
+            onClick={() => {
+              setSelectedChamado(chamado);
+              setShowDetailsModal(true);
+            }}
+          >
+            <div className="flex justify-between items-start mb-2">
+              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getPrioridadeColor(chamado.prioridade)}`}>
+                {chamado.prioridade}
+              </span>
+              <span className="text-xs text-gray-400">#{chamado.id?.slice(-6)}</span>
+            </div>
+            
+            <h3 className="font-semibold text-gray-800 mb-1 line-clamp-2">{chamado.titulo}</h3>
+            <p className="text-sm text-gray-500 mb-3">{chamado.equipamento}</p>
+            
+            <div className="flex justify-between items-center">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-white ${getStatusColor(chamado.status)}`}>
+                {getStatusIcon(chamado.status)}
+                {getStatusText(chamado.status)}
+              </span>
+              
+              {chamado.status === 'concluido' && !chamado.avaliacao && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedChamado(chamado);
+                    setShowAvaliarModal(true);
+                  }}
+                  className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-lg hover:bg-yellow-200"
+                >
+                  Avaliar
+                </button>
+              )}
+              
+              {chamado.avaliacao && (
+                <div className="flex items-center gap-1 text-xs">
+                  <StarIconSolid className="w-3 h-3 text-yellow-500" />
+                  <span>{chamado.avaliacao.nota}/5</span>
                 </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
 
-                {/* Título e Equipamento */}
-                <h3 className="font-bold text-gray-800 mb-1 group-hover:text-blue-600 transition">
-                  {chamado.titulo}
-                </h3>
-                <p className="text-sm text-gray-500 mb-3">{chamado.equipamento}</p>
+      {filteredChamados.length === 0 && (
+        <div className="bg-white rounded-xl shadow-lg p-8 text-center">
+          <WrenchScrewdriverIcon className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500">Nenhum chamado encontrado</p>
+        </div>
+      )}
 
-                {/* Informações do Técnico e Data */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center text-sm text-gray-600">
-                    <UserCircleIcon className="w-4 h-4 mr-2 text-gray-400" />
-                    {chamado.tecnicoNome || (
-                      <span className="text-yellow-600">Aguardando técnico</span>
-                    )}
-                  </div>
-                  <div className="flex items-center text-sm text-gray-600">
-                    <CalendarIcon className="w-4 h-4 mr-2 text-gray-400" />
-                    {formatDate(chamado.dataCriacao)}
-                  </div>
+      {/* Modal de Detalhes */}
+      {showDetailsModal && selectedChamado && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowDetailsModal(false)}>
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold">{selectedChamado.titulo}</h2>
+              <button onClick={() => setShowDetailsModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-500">Equipamento</label>
+                  <p className="font-medium">{selectedChamado.equipamento}</p>
                 </div>
-
-                {/* Footer com Status e Avaliação */}
-                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(chamado.status)}`}>
-                    {getStatusIcon(chamado.status)}
-                    {getStatusText(chamado.status)}
-                  </span>
-                  
-                  {chamado.status === 'concluido' && !chamado.avaliacao && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedChamado(chamado);
-                        setShowAvaliarModal(true);
-                      }}
-                      className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full hover:bg-yellow-200 transition"
-                    >
-                      <StarIcon className="w-3 h-3" />
-                      Avaliar
-                    </button>
-                  )}
-                  
-                  {chamado.avaliacao && (
-                    <div className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full">
-                      <StarIconSolid className="w-3 h-3" />
-                      {chamado.avaliacao.nota}/5
-                    </div>
-                  )}
+                <div>
+                  <label className="text-xs text-gray-500">Prioridade</label>
+                  <p>
+                    <span className={`inline-flex px-2 py-1 rounded-full text-xs ${getPrioridadeColor(selectedChamado.prioridade)}`}>
+                      {selectedChamado.prioridade}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Status</label>
+                  <p>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs text-white ${getStatusColor(selectedChamado.status)}`}>
+                      {getStatusIcon(selectedChamado.status)}
+                      {getStatusText(selectedChamado.status)}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Data</label>
+                  <p>{selectedChamado.dataCriacao?.toLocaleString('pt-BR')}</p>
                 </div>
               </div>
+
+              <div>
+                <label className="text-xs text-gray-500">Descrição</label>
+                <p className="mt-1 text-gray-700">{selectedChamado.descricao}</p>
+              </div>
+
+              {selectedChamado.tecnicoNome && (
+                <div>
+                  <label className="text-xs text-gray-500">Técnico</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <UserCircleIcon className="w-5 h-5 text-gray-400" />
+                    <p className="font-medium">{selectedChamado.tecnicoNome}</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedChamado.solucao && (
+                <div>
+                  <label className="text-xs text-gray-500">Solução</label>
+                  <p className="mt-1 text-gray-700 bg-green-50 p-3 rounded-lg">{selectedChamado.solucao}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4">
+                {selectedChamado.status === 'concluido' && !selectedChamado.avaliacao && (
+                  <button
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      setShowAvaliarModal(true);
+                    }}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+                  >
+                    Avaliar Atendimento
+                  </button>
+                )}
+                <button onClick={() => setShowDetailsModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                  Fechar
+                </button>
+              </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Chamado</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Prioridade</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Técnico</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Data</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Avaliação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredChamados.map((chamado) => (
-                <tr 
-                  key={chamado.id} 
-                  className="hover:bg-gray-50 cursor-pointer transition"
-                  onClick={() => {
-                    setSelectedChamado(chamado);
-                    setShowDetailsModal(true);
-                  }}
-                >
-                  <td className="px-6 py-4 text-sm font-mono text-gray-500">#{chamado.id?.slice(-6)}</td>
-                  <td className="px-6 py-4">
-                    <p className="font-medium text-gray-800">{chamado.titulo}</p>
-                    <p className="text-xs text-gray-500">{chamado.equipamento}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(chamado.status)}`}>
-                      {getStatusIcon(chamado.status)}
-                      {getStatusText(chamado.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getPrioridadeColor(chamado.prioridade)}`}>
-                      {chamado.prioridade}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {chamado.tecnicoNome || '-'}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(chamado.dataCriacao).toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-4">
-                    {chamado.avaliacao ? (
-                      <div className="flex items-center gap-1 text-sm">
-                        <StarIconSolid className="w-4 h-4 text-yellow-400" />
-                        <span>{chamado.avaliacao.nota}/5</span>
-                      </div>
-                    ) : chamado.status === 'concluido' ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedChamado(chamado);
-                          setShowAvaliarModal(true);
-                        }}
-                        className="text-xs text-yellow-600 hover:text-yellow-800"
-                      >
-                        Avaliar
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-400">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {filteredChamados.length === 0 && !loading && (
-        <div className="bg-white rounded-xl shadow-lg p-12 text-center border border-gray-100">
-          <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mx-auto mb-4">
-            <WrenchScrewdriverIcon className="w-12 h-12 text-blue-600" />
           </div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">Nenhum chamado encontrado</h3>
-          <p className="text-gray-500 mb-6 max-w-md mx-auto">
-            {searchTerm 
-              ? 'Nenhum resultado corresponde à sua busca. Tente outros termos.'
-              : 'Você ainda não possui chamados. Crie seu primeiro chamado para começar.'}
-          </p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition shadow-lg font-semibold"
-          >
-            <PlusIcon className="w-5 h-5" />
-            {searchTerm ? 'Novo Chamado' : 'Criar Primeiro Chamado'}
-          </button>
         </div>
       )}
 
-      {/* Modais (mantidos iguais) */}
-      {showDetailsModal && selectedChamado && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          {/* ... conteúdo do modal de detalhes (igual ao anterior) ... */}
-        </div>
-      )}
-
+      {/* Modal de Avaliação */}
       {showAvaliarModal && selectedChamado && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          {/* ... conteúdo do modal de avaliação (igual ao anterior) ... */}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowAvaliarModal(false)}>
+          <div className="bg-white rounded-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b">
+              <h2 className="text-xl font-bold">Avaliar Atendimento</h2>
+              <p className="text-sm text-gray-500">{selectedChamado.titulo}</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Nota</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((nota) => (
+                    <button
+                      key={nota}
+                      onClick={() => setAvaliacao({ ...avaliacao, nota })}
+                      className={`p-2 rounded-lg transition ${avaliacao.nota >= nota ? 'text-yellow-500' : 'text-gray-300'}`}
+                    >
+                      <StarIconSolid className="w-8 h-8" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Comentário *</label>
+                <textarea
+                  rows={4}
+                  value={avaliacao.comentario}
+                  onChange={(e) => setAvaliacao({ ...avaliacao, comentario: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Como foi o atendimento? O problema foi resolvido?"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t flex justify-end gap-3">
+              <button onClick={() => setShowAvaliarModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button onClick={handleAvaliarChamado} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Enviar Avaliação
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

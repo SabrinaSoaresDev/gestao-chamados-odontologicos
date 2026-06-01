@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Ortodonsist</title>
+    <title>Ortodonsist - Gestão de Manutenção</title>
 
-    <!-- Favicon principal (substitui o ícone padrão do Vite) -->
+    <!-- ========== FAVICONS ========== -->
+    <!-- Favicon principal -->
     <link rel="icon" type="image/x-icon" href="/logo.ico" />
     <link rel="shortcut icon" href="/logo.ico" type="image/x-icon" />
 
@@ -18,10 +19,11 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png" />
 
-    <!-- Safari pinned tab (opcional) -->
-    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#ff6b00" />
+    <!-- Safari pinned tab -->
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#0f172a" />
 
-    <!-- Meta tags para iPhone -->
+    <!-- ========== META TAGS ========== -->
+    <!-- iOS -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Ortodonsist" />
@@ -30,9 +32,101 @@
     <meta name="theme-color" content="#0f172a" />
     <meta name="msapplication-TileColor" content="#0f172a" />
     <meta name="msapplication-TileImage" content="/logo.ico" />
+
+    <!-- Descrição para SEO -->
+    <meta name="description" content="Sistema de gestão de chamados de manutenção" />
+    <meta name="author" content="Ortodonsist" />
+
+    <!-- ========== POLYFILLS PARA NAVEGADORES ANTIGOS ========== -->
+    <!-- Carrega polyfills apenas se necessário (navegadores antigos) -->
+    <script>
+      (function() {
+        // Detecta navegadores antigos que precisam de polyfills
+        var needsPolyfills = !window.Promise || 
+                             !window.fetch || 
+                             !window.localStorage ||
+                             !window.Intl ||
+                             !window.WeakMap;
+        
+        if (needsPolyfills) {
+          // Carrega polyfills condicionalmente
+          var script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/core-js-bundle@3.8.1/minified.js';
+          document.head.appendChild(script);
+          
+          var script2 = document.createElement('script');
+          script2.src = 'https://cdn.jsdelivr.net/npm/regenerator-runtime@0.13.7/runtime.js';
+          document.head.appendChild(script2);
+          
+          var script3 = document.createElement('script');
+          script3.src = 'https://cdn.polyfill.io/v3/polyfill.min.js?features=es6,es7,fetch,promise,localStorage,Intl';
+          document.head.appendChild(script3);
+          
+          console.log('⚠️ Polyfills carregados para navegador antigo');
+        }
+      })();
+    </script>
+
+    <!-- ========== CSS ========== -->
+    <!-- CSS principal (fallback para navegadores muito antigos) -->
+    <style>
+      /* Fallback básico para garantir que o site seja visível */
+      html, body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      
+      #root {
+        min-height: 100vh;
+      }
+      
+      /* Loading inicial */
+      .initial-loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #2563eb;
+      }
+      
+      /* Esconde conteúdo durante carregamento do CSS principal */
+      .no-css {
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Loading inicial visível enquanto o React carrega -->
+    <div id="root">
+      <div class="initial-loading">
+        <div style="text-align: center;">
+          <div style="width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; margin: 0 auto 1rem; animation: spin 1s linear infinite;"></div>
+          <p>Carregando sistema...</p>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+
+    <!-- Script principal -->
     <script type="module" src="/src/main.jsx"></script>
+    
+    <!-- Mensagem para navegadores sem JavaScript -->
+    <noscript>
+      <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; display: flex; align-items: center; justify-content: center; text-align: center; padding: 2rem; z-index: 9999;">
+        <div>
+          <h2>⚠️ JavaScript desabilitado</h2>
+          <p>Para utilizar este sistema, habilite JavaScript no seu navegador.</p>
+          <p style="font-size: 12px; color: #666;">Caso não saiba como fazer, procure por "Como ativar JavaScript" no seu navegador.</p>
+        </div>
+      </div>
+    </noscript>
   </body>
 </html>

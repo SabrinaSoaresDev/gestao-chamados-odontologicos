@@ -16,10 +16,13 @@ import Relatorios from './pages/Admin/Relatorios';
 import AdminUsuarios from './pages/Admin/Usuarios';
 import Patrimonio from './pages/Admin/Patrimonio';
 import NovoChamadoPage from './components/Chamados/NovoChamadoModal';
+import Produtos from './pages/Admin/Produtos';
+import GerenciarPedidos from './pages/Admin/GerenciarPedidos';
 
 // Páginas do Dentista
 import DentistaDashboard from './pages/Dentistas/Dashboard';
 import DentistaChamados from './pages/Dentistas/Chamados';
+import PedidosMateriais from './pages/Dentistas/PedidosMateriais';
 
 // Páginas do Técnico
 import TecnicoDashboard from './pages/Tecnico/Dashboard';
@@ -106,6 +109,22 @@ function AppRoutes() {
           </Layout>
         </PrivateRoute>
       } />
+      // Adicione as rotas
+<Route path="/admin/produtos" element={
+  <PrivateRoute allowedRoles={['admin']}>
+    <Layout currentPage="produtos">
+      <Produtos />
+    </Layout>
+  </PrivateRoute>
+} />
+
+<Route path="/admin/pedidos" element={
+  <PrivateRoute allowedRoles={['admin']}>
+    <Layout currentPage="pedidos">
+      <GerenciarPedidos />
+    </Layout>
+  </PrivateRoute>
+} />
       
       {/* Rotas do Dentista */}
       <Route path="/dentista" element={
@@ -122,6 +141,13 @@ function AppRoutes() {
           </Layout>
         </PrivateRoute>
       } />
+      <Route path="/dentista/pedidos-materiais" element={
+  <PrivateRoute allowedRoles={['dentista']}>
+    <Layout currentPage="pedidos-materiais">
+      <PedidosMateriais />
+    </Layout>
+  </PrivateRoute>
+} />
       
       {/* Rotas do Técnico */}
       <Route path="/tecnico" element={

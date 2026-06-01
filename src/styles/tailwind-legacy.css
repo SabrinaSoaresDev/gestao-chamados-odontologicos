@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* Overrides para compatibilidade com navegadores antigos */
+:root {
+  /* Variáveis CSS - compatível */
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #eab308;
+}
+
+/* Fallbacks para CSS Grid em navegadores antigos */
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -0.5rem;
+}
+
+@media (min-width: 640px) {
+  .grid-cols-2 {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .grid-cols-2 > * {
+    width: 50%;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:grid-cols-3 {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .md\:grid-cols-3 > * {
+    width: 33.333%;
+  }
+  
+  .md\:grid-cols-4 {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .md\:grid-cols-4 > * {
+    width: 25%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg\:grid-cols-5 {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .lg\:grid-cols-5 > * {
+    width: 20%;
+  }
+}
+
+/* Fallback para flex-wrap */
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+/* Compatibilidade para opacity */
+.bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.bg-opacity-20 {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Fallback para backdrop-blur */
+.backdrop-blur-sm {
+  background-color: rgba(255, 255, 255, 0.8);
+}
