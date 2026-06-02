@@ -710,6 +710,7 @@ export default function Produtos() {
                     <option value="frasco">Frasco</option>
                     <option value="pacote">Pacote</option>
                     <option value="bobina">Bobina</option>
+                    <option value="galão">Galão</option>
                   </select>
                 </div>
 
