@@ -55,6 +55,7 @@ export default function Produtos() {
     observacoes: ''
   });
 
+  // Buscar produtos com ordenação alfabética
   useEffect(() => {
     const q = query(collection(db, 'produtos'), orderBy('nome', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -62,6 +63,14 @@ export default function Produtos() {
         id: doc.id,
         ...doc.data()
       }));
+      
+      // Garantir ordenação alfabética (case-insensitive)
+      produtosData.sort((a, b) => {
+        const nomeA = a.nome?.toLowerCase() || '';
+        const nomeB = b.nome?.toLowerCase() || '';
+        return nomeA.localeCompare(nomeB);
+      });
+      
       setProdutos(produtosData);
       setFilteredProdutos(produtosData);
       
@@ -82,14 +91,21 @@ export default function Produtos() {
     return () => unsubscribe();
   }, []);
 
+  // Filtrar produtos mantendo ordenação alfabética
   useEffect(() => {
-    let filtered = produtos;
+    let filtered = [...produtos]; // Criar cópia do array
     if (searchTerm) {
       filtered = filtered.filter(p =>
         p.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.marca?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
+    // Manter ordenação alfabética após o filtro
+    filtered.sort((a, b) => {
+      const nomeA = a.nome?.toLowerCase() || '';
+      const nomeB = b.nome?.toLowerCase() || '';
+      return nomeA.localeCompare(nomeB);
+    });
     setFilteredProdutos(filtered);
     setCurrentPage(1); // Reset para primeira página ao filtrar
   }, [searchTerm, produtos]);
@@ -220,6 +236,7 @@ export default function Produtos() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Produtos</h1>
           <p className="text-sm text-gray-600">Gerencie os produtos do estoque</p>
+          <p className="text-xs text-gray-400 mt-1">✓ Produtos ordenados alfabeticamente</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           {/* Botão de Alerta de Vencimento */}
@@ -329,13 +346,16 @@ export default function Produtos() {
         />
       </div>
 
-      {/* TABELA - Desktop com Paginação */}
+      {/* TABELA - Desktop com Paginação e Ordenação Alfabética */}
       <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Produto</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                  Produto 
+                  <span className="ml-1 text-blue-500">⬆️ A-Z</span>
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Marca</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Estoque</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Vencimento</th>
@@ -396,7 +416,7 @@ export default function Produtos() {
         </div>
       </div>
 
-      {/* CARDS - Mobile com Paginação */}
+      {/* CARDS - Mobile com Paginação e Ordenação Alfabética */}
       <div className="md:hidden space-y-4">
         {currentItems.map((produto) => {
           const statusVenc = getStatusVencimento(produto.vencimento);
@@ -560,7 +580,7 @@ export default function Produtos() {
         </div>
       )}
 
-      {/* Modal de Alerta de Produtos Vencendo (mantido igual) */}
+      {/* Modal de Alerta de Produtos Vencendo */}
       {showAlertaModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowAlertaModal(false)}>
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -639,7 +659,7 @@ export default function Produtos() {
         </div>
       )}
 
-      {/* Modal de Produto (mantido igual) */}
+      {/* Modal de Produto */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -662,7 +682,9 @@ export default function Produtos() {
                     value={formData.nome}
                     onChange={(e) => setFormData({...formData, nome: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: Luva de Procedimento"
                   />
+                  <p className="text-xs text-gray-400 mt-1">Os produtos são ordenados alfabeticamente por este campo</p>
                 </div>
 
                 <div>
@@ -672,6 +694,7 @@ export default function Produtos() {
                     value={formData.marca}
                     onChange={(e) => setFormData({...formData, marca: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: 3M, Johnson..."
                   />
                 </div>
 
@@ -682,6 +705,7 @@ export default function Produtos() {
                     value={formData.fornecedor}
                     onChange={(e) => setFormData({...formData, fornecedor: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Nome do fornecedor"
                   />
                 </div>
 
