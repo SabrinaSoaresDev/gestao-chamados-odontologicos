@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../../services/firebase';
 import { 
   collection, 
@@ -47,12 +47,6 @@ export default function GerenciarPedidos() {
   const [unidades, setUnidades] = useState([]);
   const [novaObservacao, setNovaObservacao] = useState('');
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
-  const [assinatura, setAssinatura] = useState('');
-  const [nomeRecebedor, setNomeRecebedor] = useState('');
-  const [dataRecebimento, setDataRecebimento] = useState('');
-  
-  // Referência para impressão
-  const printRef = useRef();
   
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -211,33 +205,6 @@ export default function GerenciarPedidos() {
     }
   };
 
-  // Atualizar quantidade entregue e mudar status para "em separação"
-  const handleAtualizarQuantidadeEntregue = async (pedidoId, itemIndex, quantidade) => {
-    const pedido = pedidos.find(p => p.id === pedidoId);
-    const novosItens = [...pedido.itens];
-    const quantidadeAnterior = novosItens[itemIndex].quantidadeEntregue || 0;
-    novosItens[itemIndex] = { ...novosItens[itemIndex], quantidadeEntregue: quantidade };
-    
-    try {
-      await updateDoc(doc(db, 'pedidos', pedidoId), {
-        itens: novosItens,
-        ...(pedido.status === 'aprovado' && { status: 'separacao' }),
-        historico: [
-          ...(pedido.historico || []),
-          { 
-            data: new Date(), 
-            acao: `Quantidade do item "${novosItens[itemIndex].produtoNome}" alterada de ${quantidadeAnterior} para ${quantidade}${pedido.status === 'aprovado' ? ' - Status alterado para EM SEPARAÇÃO' : ''}`,
-            usuario: 'Admin',
-            tipo: 'quantidade'
-          }
-        ]
-      });
-      toast.success(pedido.status === 'aprovado' ? 'Quantidade atualizada! Status alterado para "Em Separação"' : 'Quantidade atualizada!');
-    } catch (error) {
-      toast.error('Erro ao atualizar quantidade');
-    }
-  };
-
   // Atualizar múltiplas quantidades e mudar status para "em separação"
   const handleAtualizarMultiplasQuantidades = async () => {
     if (!selectedPedido) return;
@@ -321,203 +288,331 @@ export default function GerenciarPedidos() {
 
   // Função de impressão
   const handleImprimir = () => {
-    setDataRecebimento(new Date().toLocaleDateString('pt-BR'));
-    setTimeout(() => {
-      const printContent = printRef.current;
-      const originalTitle = document.title;
-      document.title = `Pedido_${selectedPedido.id?.slice(-6)}`;
-      
-      const printWindow = window.open('', '_blank');
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Pedido ${selectedPedido.id?.slice(-6)}</title>
-          <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
+    if (!selectedPedido) return;
+    
+    const dataRecebimentoFormatada = new Date().toLocaleDateString('pt-BR');
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Pedido ${selectedPedido.id?.slice(-6)}</title>
+        <meta charset="UTF-8">
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 40px;
+            background: white;
+            color: #1a1a1a;
+          }
+          .print-container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #2563eb;
+          }
+          .logo {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1e3a8a;
+            margin-bottom: 8px;
+          }
+          .logo span {
+            color: #2563eb;
+          }
+          .subtitle {
+            color: #6b7280;
+            font-size: 12px;
+            margin-top: 5px;
+          }
+          .title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1f2937;
+            margin-top: 15px;
+          }
+          .info-section {
+            background: #f3f4f6;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+          }
+          .info-item {
+            display: flex;
+            flex-direction: column;
+          }
+          .info-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
+            margin-bottom: 4px;
+          }
+          .info-value {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1f2937;
+          }
+          .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          .status-pendente { background: #fef3c7; color: #92400e; }
+          .status-aprovado { background: #dbeafe; color: #1e40af; }
+          .status-separacao { background: #f3e8ff; color: #6b21a5; }
+          .status-entregue { background: #dcfce7; color: #166534; }
+          .status-cancelado { background: #fee2e2; color: #991b1b; }
+          
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 25px;
+          }
+          .items-table th {
+            background: #f9fafb;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #6b7280;
+            border-bottom: 2px solid #e5e7eb;
+          }
+          .items-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 13px;
+          }
+          .items-table tr:last-child td {
+            border-bottom: none;
+          }
+          .observacoes {
+            background: #fffbeb;
+            padding: 15px;
+            border-left: 4px solid #f59e0b;
+            border-radius: 8px;
+            margin-bottom: 25px;
+          }
+          .observacoes-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #92400e;
+            margin-bottom: 6px;
+          }
+          .observacoes-admin {
+            background: #f0fdf4;
+            border-left-color: #22c55e;
+          }
+          .observacoes-admin .observacoes-label {
+            color: #166534;
+          }
+          .assinatura-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px dashed #d1d5db;
+          }
+          .assinatura-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+          }
+          .assinatura-box {
+            text-align: center;
+          }
+          .assinatura-linha {
+            margin-top: 40px;
+            border-top: 1px solid #9ca3af;
+            width: 80%;
+            margin-left: auto;
+            margin-right: auto;
+          }
+          .assinatura-texto {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 8px;
+          }
+          .data-recebimento {
+            font-size: 12px;
+            color: #4b5563;
+            margin-top: 20px;
+            text-align: right;
+            font-style: italic;
+          }
+          .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 20px;
+          }
+          .produto-detalhe {
+            display: flex;
+            flex-direction: column;
+          }
+          .produto-marca {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 2px;
+          }
+          .quantidade-parcial {
+            color: #ea580c;
+          }
+          .quantidade-completa {
+            color: #16a34a;
+            font-weight: 600;
+          }
+          @media print {
             body {
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-              padding: 40px;
-              background: white;
-              color: #1a1a1a;
-            }
-            .print-container {
-              max-width: 900px;
-              margin: 0 auto;
-              background: white;
-            }
-            .header {
-              text-align: center;
-              margin-bottom: 30px;
-              padding-bottom: 20px;
-              border-bottom: 3px solid #2563eb;
-            }
-            .logo {
-              font-size: 28px;
-              font-weight: bold;
-              color: #1e3a8a;
-              margin-bottom: 8px;
-            }
-            .logo span {
-              color: #2563eb;
-            }
-            .subtitle {
-              color: #6b7280;
-              font-size: 12px;
-            }
-            .title {
-              font-size: 20px;
-              font-weight: bold;
-              color: #1f2937;
-              margin-top: 15px;
-            }
-            .info-section {
-              background: #f3f4f6;
               padding: 20px;
-              border-radius: 12px;
-              margin-bottom: 25px;
             }
-            .info-grid {
-              display: grid;
-              grid-template-columns: repeat(2, 1fr);
-              gap: 15px;
-            }
-            .info-item {
-              display: flex;
-              flex-direction: column;
-            }
-            .info-label {
-              font-size: 11px;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              color: #6b7280;
-              margin-bottom: 4px;
-            }
-            .info-value {
-              font-size: 14px;
-              font-weight: 500;
-              color: #1f2937;
-            }
-            .items-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 25px;
-            }
-            .items-table th {
-              background: #f9fafb;
-              padding: 12px;
-              text-align: left;
-              font-size: 12px;
-              font-weight: 600;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              color: #6b7280;
-              border-bottom: 2px solid #e5e7eb;
-            }
-            .items-table td {
-              padding: 10px 12px;
-              border-bottom: 1px solid #e5e7eb;
-              font-size: 13px;
-            }
-            .items-table tr:last-child td {
-              border-bottom: none;
-            }
-            .status-badge {
-              display: inline-block;
-              padding: 4px 8px;
-              border-radius: 6px;
-              font-size: 11px;
-              font-weight: 600;
-            }
-            .status-entregue {
-              background: #dcfce7;
-              color: #166534;
-            }
-            .observacoes {
-              background: #fffbeb;
-              padding: 15px;
-              border-left: 4px solid #f59e0b;
-              border-radius: 8px;
-              margin-bottom: 25px;
-            }
-            .observacoes-label {
-              font-size: 12px;
-              font-weight: 600;
-              color: #92400e;
-              margin-bottom: 6px;
-            }
-            .assinatura-section {
-              margin-top: 40px;
-              padding-top: 30px;
-              border-top: 2px dashed #d1d5db;
-            }
-            .assinatura-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 30px;
-              margin-top: 20px;
-            }
-            .assinatura-box {
-              text-align: center;
-            }
-            .assinatura-linha {
-              margin-top: 40px;
-              border-top: 1px solid #9ca3af;
-              width: 80%;
-              margin-left: auto;
-              margin-right: auto;
-            }
-            .assinatura-texto {
-              font-size: 11px;
-              color: #6b7280;
-              margin-top: 8px;
-            }
-            .data-recebimento {
-              font-size: 12px;
-              color: #4b5563;
-              margin-top: 20px;
-              text-align: right;
-              font-style: italic;
-            }
-            .footer {
-              margin-top: 40px;
-              text-align: center;
-              font-size: 10px;
-              color: #9ca3af;
-              border-top: 1px solid #e5e7eb;
-              padding-top: 20px;
-            }
-            @media print {
-              body {
-                padding: 20px;
-              }
-              .no-print {
-                display: none;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            ${printContent.current ? printContent.current.innerHTML : ''}
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-container">
+          <div class="header">
+            <div class="logo">
+              🦷 ORTO<span>DONSIST</span>
+            </div>
+            <div class="subtitle">Materiais Odontológicos • Qualidade e Confiança</div>
+            <div class="title">COMPROVANTE DE PEDIDO</div>
           </div>
-          <script>
-            window.onload = () => {
-              window.print();
-              setTimeout(() => window.close(), 500);
-            };
-          <\/script>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
-      document.title = originalTitle;
-    }, 100);
+
+          <div class="info-section">
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">Nº DO PEDIDO</span>
+                <span class="info-value">#${selectedPedido.id?.slice(-8)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">DATA DO PEDIDO</span>
+                <span class="info-value">${formatDateTime(selectedPedido.dataPedido)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">SOLICITANTE</span>
+                <span class="info-value">${selectedPedido.dentistaNome || '-'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">UNIDADE</span>
+                <span class="info-value">${selectedPedido.unidade || '-'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">TIPO DE PEDIDO</span>
+                <span class="info-value">${selectedPedido.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">STATUS</span>
+                <span class="info-value">
+                  <span class="status-badge status-${selectedPedido.status}">
+                    ${getStatusText(selectedPedido.status)}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Solicitado</th>
+                <th>Entregue</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${selectedPedido.itens.map(item => {
+                const entregue = item.quantidadeEntregue || 0;
+                const statusClass = entregue === item.quantidade ? 'quantidade-completa' : (entregue > 0 ? 'quantidade-parcial' : '');
+                const statusText = entregue === 0 ? 'Pendente' : (entregue === item.quantidade ? 'Completo' : 'Parcial');
+                return `
+                  <tr>
+                    <td>
+                      <div class="produto-detalhe">
+                        <strong>${item.produtoNome}</strong>
+                        ${item.marca ? `<div class="produto-marca">Marca: ${item.marca}</div>` : ''}
+                      </div>
+                    </td>
+                    <td>${item.quantidade} un.</td>
+                    <td class="${statusClass}">${entregue} un.</td>
+                    <td>${statusText}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          ${selectedPedido.observacoes ? `
+            <div class="observacoes">
+              <div class="observacoes-label">📝 OBSERVAÇÕES DO SOLICITANTE</div>
+              <div style="font-size: 13px; color: #78350f;">${selectedPedido.observacoes}</div>
+            </div>
+          ` : ''}
+
+          ${selectedPedido.observacoesAdmin ? `
+            <div class="observacoes observacoes-admin">
+              <div class="observacoes-label">📋 OBSERVAÇÕES DO ADMINISTRADOR</div>
+              <div style="font-size: 13px; color: #14532d;">${selectedPedido.observacoesAdmin}</div>
+            </div>
+          ` : ''}
+
+          <div class="assinatura-section">
+            <div class="assinatura-grid">
+              <div class="assinatura-box">
+                <div class="assinatura-linha"></div>
+                <div class="assinatura-texto">Assinatura de quem recebeu</div>
+              </div>
+              <div class="assinatura-box">
+                <div class="assinatura-linha"></div>
+                <div class="assinatura-texto">Carimbo / Identificação</div>
+              </div>
+            </div>
+            <div class="data-recebimento">
+              Data de recebimento: ${dataRecebimentoFormatada}
+            </div>
+          </div>
+
+          <div class="footer">
+            <div><strong>Ortodonsist</strong> - Materiais Odontológicos</div>
+            <div style="font-size: 9px; margin-top: 8px;">
+              Este documento é um comprovante válido do pedido realizado<br>
+              Em caso de dúvidas, entre em contato com o administrativo
+            </div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 1000);
+          };
+        <\/script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   // Exportar CSV
@@ -623,108 +718,6 @@ export default function GerenciarPedidos() {
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-6">
-      {/* Componente de impressão oculto */}
-      <div ref={printRef} style={{ display: 'none' }}>
-        <div className="print-container">
-          <div className="header">
-            <div className="logo">
-              🦷 ORTO<span>DONSIST</span>
-            </div>
-            <div className="subtitle">Materiais Odontológicos</div>
-            <div className="title">COMPROVANTE DE PEDIDO</div>
-          </div>
-
-          <div className="info-section">
-            <div className="info-grid">
-              <div className="info-item">
-                <span className="info-label">Nº DO PEDIDO</span>
-                <span className="info-value">#{selectedPedido?.id?.slice(-8)}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">DATA DO PEDIDO</span>
-                <span className="info-value">{formatDateTime(selectedPedido?.dataPedido)}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">SOLICITANTE</span>
-                <span className="info-value">{selectedPedido?.dentistaNome}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">UNIDADE</span>
-                <span className="info-value">{selectedPedido?.unidade}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">TIPO</span>
-                <span className="info-value">{selectedPedido?.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">STATUS</span>
-                <span className="info-value">
-                  <span className={`status-badge ${selectedPedido?.status === 'entregue' ? 'status-entregue' : ''}`}>
-                    {getStatusText(selectedPedido?.status)}
-                  </span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <table className="items-table">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Marca</th>
-                <th>Solicitado</th>
-                <th>Entregue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedPedido?.itens.map((item, index) => (
-                <tr key={index}>
-                  <td><strong>{item.produtoNome}</strong></td>
-                  <td>{item.marca || '-'}</td>
-                  <td>{item.quantidade}</td>
-                  <td>{item.quantidadeEntregue || 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {selectedPedido?.observacoes && (
-            <div className="observacoes">
-              <div className="observacoes-label">📝 OBSERVAÇÕES DO SOLICITANTE</div>
-              <div style={{ fontSize: '13px', color: '#78350f' }}>{selectedPedido.observacoes}</div>
-            </div>
-          )}
-
-          {selectedPedido?.observacoesAdmin && (
-            <div className="observacoes" style={{ background: '#f0fdf4', borderLeftColor: '#22c55e' }}>
-              <div className="observacoes-label" style={{ color: '#166534' }}>📋 OBSERVAÇÕES DO ADMINISTRADOR</div>
-              <div style={{ fontSize: '13px', color: '#14532d' }}>{selectedPedido.observacoesAdmin}</div>
-            </div>
-          )}
-
-          <div className="assinatura-section">
-            <div className="assinatura-grid">
-              <div className="assinatura-box">
-                <div className="assinatura-linha"></div>
-                <div className="assinatura-texto">Assinatura de quem recebeu</div>
-              </div>
-              <div className="assinatura-box">
-                <div className="assinatura-linha"></div>
-                <div className="assinatura-texto">Carimbo / Identificação</div>
-              </div>
-            </div>
-            <div className="data-recebimento">
-              Data de recebimento: {dataRecebimento}
-            </div>
-          </div>
-
-          <div className="footer">
-            <div>Ortodonsist - Materiais Odontológicos</div>
-            <div style={{ fontSize: '9px', marginTop: '5px' }}>Este documento é um comprovante válido do pedido realizado</div>
-          </div>
-        </div>
-      </div>
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
@@ -895,7 +888,7 @@ export default function GerenciarPedidos() {
                 <tr>
                   <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
                     Nenhum pedido encontrado
-                   </td>
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -1120,7 +1113,7 @@ export default function GerenciarPedidos() {
                 <div>
                   <p className="text-xs text-gray-500">Status</p>
                   <span className={`inline-flex px-2 py-1 text-xs rounded-full ${getStatusColor(selectedPedido.status)}`}>
-                    {selectedPedido.status}
+                    {getStatusText(selectedPedido.status)}
                   </span>
                 </div>
                 <div>
@@ -1195,12 +1188,12 @@ export default function GerenciarPedidos() {
                                     {entregue}
                                   </span>
                                 )}
-                               </td>
+                              </td>
                               <td className="px-2 sm:px-3 py-2 text-center">
                                 {entregue === 0 && <span className="text-xs text-gray-500">⏳ Pendente</span>}
                                 {entregue > 0 && entregue < item.quantidade && <span className="text-xs text-orange-600">⚠️ Parcial</span>}
                                 {entregue === item.quantidade && <span className="text-xs text-green-600">✅ Completo</span>}
-                               </td>
+                              </td>
                             </tr>
                           );
                         })}
