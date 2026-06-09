@@ -81,16 +81,14 @@ export default function PedidosMateriais() {
 
     const pedidosQuery = query(
       collection(db, 'pedidos'),
-      where('dentistaId', '==', userData.uid),
-      orderBy('dataPedido', 'desc')
+      where('dentistaId', '==', userData.uid)
     );
 
     const unsubscribePedidos = onSnapshot(pedidosQuery, (snapshot) => {
       const pedidosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        dataPedido: doc.data().dataPedido?.toDate(),
-        dataEntrega: doc.data().dataEntrega?.toDate()
+        dataPedido: doc.data().dataPedido?.toDate()
       }));
       setPedidos(pedidosData);
       setLoading(false);
@@ -135,7 +133,7 @@ export default function PedidosMateriais() {
             : i
         )
       });
-      toast.success(`${quantidadeProduto} unidade(s) adicionada(s) a ${selectedProduto.nome}`);
+      toast.success(`${quantidadeProduto} unidade(s) adicionada(s)`);
     } else {
       const novoItem = {
         produtoId: selectedProduto.id,
@@ -164,83 +162,34 @@ export default function PedidosMateriais() {
     e.preventDefault();
     
     if (formData.itens.length === 0) {
-      toast.error('Adicione pelo menos um item ao pedido');
+      toast.error('Adicione pelo menos um item');
       return;
     }
-    
     if (!formData.unidade) {
-      toast.error('Unidade não encontrada. Contate o administrador.');
+      toast.error('Informe a unidade');
       return;
     }
-    
     if (!userData?.uid) {
       toast.error('Usuário não identificado');
       return;
     }
 
-    // Validar pedido mensal
-    if (formData.tipo === 'mensal' && !podeFazerPedidoMensal && !editingPedido) {
-      toast.error('Pedidos mensais só podem ser feitos entre os dias 20 e 30 de cada mês');
-      return;
-    }
-
-    // Verificar se já existe pedido mensal no mês
-    if (formData.tipo === 'mensal' && !editingPedido) {
-      const pedidoMensalExistente = pedidos.find(p => {
-        if (p.tipo !== 'mensal') return false;
-        const dataPedido = p.dataPedido?.toDate ? p.dataPedido.toDate() : new Date(p.dataPedido);
-        return dataPedido.getMonth() === hoje.getMonth() && 
-               dataPedido.getFullYear() === hoje.getFullYear() &&
-               p.status !== 'cancelado';
-      });
-      
-      if (pedidoMensalExistente) {
-        toast.error('Você já possui um pedido mensal neste mês. Aguarde a aprovação ou faça um pedido avulso.');
-        return;
-      }
-    }
-
     try {
       const pedidoData = {
         dentistaId: userData.uid,
-        dentistaNome: userData.nome || userData.displayName || 'Dentista',
+        dentistaNome: userData.nome || 'Dentista',
         unidade: formData.unidade,
         tipo: formData.tipo,
         status: 'pendente',
-        itens: formData.itens.map(item => ({
-          ...item,
-          quantidadeEntregue: 0
-        })),
-        observacoes: formData.observacoes || '',
+        itens: formData.itens,
+        observacoes: formData.observacoes,
         dataPedido: new Date(),
-        dataLimite: formData.tipo === 'mensal' ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0) : null,
-        historico: [{ 
-          data: new Date(), 
-          acao: 'Pedido criado', 
-          usuario: userData.nome || userData.displayName || 'Dentista',
-          tipo: 'criacao'
-        }]
+        dataLimite: formData.tipo === 'mensal' ? new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0) : null,
+        historico: [{ data: new Date(), acao: 'Pedido criado', usuario: userData.nome || 'Dentista' }]
       };
       
-      if (editingPedido) {
-        await updateDoc(doc(db, 'pedidos', editingPedido.id), {
-          ...pedidoData,
-          historico: [
-            ...pedidoData.historico,
-            { 
-              data: new Date(), 
-              acao: 'Pedido editado', 
-              usuario: userData.nome || userData.displayName || 'Dentista',
-              tipo: 'edicao'
-            }
-          ]
-        });
-        toast.success('Pedido atualizado com sucesso!');
-      } else {
-        await addDoc(collection(db, 'pedidos'), pedidoData);
-        toast.success('Pedido enviado com sucesso!');
-      }
-      
+      await addDoc(collection(db, 'pedidos'), pedidoData);
+      toast.success('Pedido enviado!');
       setShowModal(false);
       resetForm();
     } catch (error) {
@@ -251,13 +200,8 @@ export default function PedidosMateriais() {
 
   const handleDelete = async (id) => {
     if (window.confirm('Tem certeza que deseja cancelar este pedido?')) {
-      try {
-        await deleteDoc(doc(db, 'pedidos', id));
-        toast.success('Pedido cancelado com sucesso');
-      } catch (error) {
-        console.error('Erro ao cancelar pedido:', error);
-        toast.error('Erro ao cancelar pedido');
-      }
+      await deleteDoc(doc(db, 'pedidos', id));
+      toast.success('Pedido cancelado');
     }
   };
 
@@ -274,18 +218,11 @@ export default function PedidosMateriais() {
   };
 
   const handleEdit = (pedido) => {
-    if (pedido.status !== 'pendente') {
-      toast.error('Apenas pedidos pendentes podem ser editados');
-      return;
-    }
     setEditingPedido(pedido);
     setFormData({
       tipo: pedido.tipo,
       unidade: pedido.unidade,
-      itens: pedido.itens.map(item => ({
-        ...item,
-        quantidadeEntregue: item.quantidadeEntregue || 0
-      })),
+      itens: pedido.itens,
       observacoes: pedido.observacoes || ''
     });
     setShowModal(true);
@@ -295,7 +232,6 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return 'bg-yellow-100 text-yellow-800';
       case 'aprovado': return 'bg-blue-100 text-blue-800';
-      case 'separacao': return 'bg-purple-100 text-purple-800';
       case 'entregue': return 'bg-green-100 text-green-800';
       case 'cancelado': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100';
@@ -306,7 +242,6 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return <ClockIcon className="w-4 h-4" />;
       case 'aprovado': return <CheckCircleIcon className="w-4 h-4" />;
-      case 'separacao': return <PencilIcon className="w-4 h-4" />;
       case 'entregue': return <TruckIcon className="w-4 h-4" />;
       case 'cancelado': return <XMarkIcon className="w-4 h-4" />;
       default: return null;
@@ -317,7 +252,6 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return 'Pendente';
       case 'aprovado': return 'Aprovado';
-      case 'separacao': return 'Em Separação';
       case 'entregue': return 'Entregue';
       case 'cancelado': return 'Cancelado';
       default: return status;
@@ -338,7 +272,6 @@ export default function PedidosMateriais() {
     total: pedidos.length,
     pendentes: pedidos.filter(p => p.status === 'pendente').length,
     aprovados: pedidos.filter(p => p.status === 'aprovado').length,
-    separacao: pedidos.filter(p => p.status === 'separacao').length,
     entregues: pedidos.filter(p => p.status === 'entregue').length,
     cancelados: pedidos.filter(p => p.status === 'cancelado').length
   };
@@ -352,74 +285,59 @@ export default function PedidosMateriais() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-3 sm:p-6">
+    <div className="space-y-6 p-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Meus Pedidos de Materiais</h1>
-          <p className="text-sm text-gray-600">Solicite materiais para sua unidade</p>
+          <h1 className="text-2xl font-bold text-gray-800">Meus Pedidos de Materiais</h1>
+          <p className="text-gray-600">Solicite materiais para sua unidade</p>
+         
         </div>
         <button
           onClick={() => {
             resetForm();
             setShowModal(true);
           }}
-          className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm sm:text-base"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
-          <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+          <PlusIcon className="w-5 h-5" />
           Novo Pedido
         </button>
       </div>
 
       {/* Aviso de Pedido Mensal */}
-      {!podeFazerPedidoMensal && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <div className="flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5 text-yellow-600" />
-            <p className="text-yellow-800 text-sm">
-              📅 Hoje é dia {diaAtual}. O período para pedidos mensais é entre os dias <strong>20 e 30</strong>.
-              Enquanto isso, você pode fazer pedidos avulsos normalmente.
-            </p>
-          </div>
-        </div>
-      )}
-
       {podeFazerPedidoMensal && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
           <div className="flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-green-600" />
             <p className="text-green-800 text-sm">
-              <strong>Período de pedido mensal!</strong> Você pode fazer seu pedido mensal entre os dias 20 e 30 de cada mês.
+              <strong>Período de pedido mensal!</strong> Você pode fazer seu pedido mensal entre os dias 20 e 30.
             </p>
           </div>
         </div>
       )}
 
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Total</p>
-          <p className="text-xl sm:text-2xl font-bold">{stats.total}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="bg-white rounded-lg p-3 shadow-sm border">
+          <p className="text-xs text-gray-500">Total</p>
+          <p className="text-xl font-bold">{stats.total}</p>
         </div>
-        <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 border border-yellow-200">
-          <p className="text-xs sm:text-sm text-yellow-600">Pendentes</p>
-          <p className="text-xl sm:text-2xl font-bold text-yellow-700">{stats.pendentes}</p>
+        <div className="bg-yellow-50 rounded-lg p-3 shadow-sm border border-yellow-200">
+          <p className="text-xs text-yellow-600">Pendentes</p>
+          <p className="text-xl font-bold text-yellow-700">{stats.pendentes}</p>
         </div>
-        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200">
-          <p className="text-xs sm:text-sm text-blue-600">Aprovados</p>
-          <p className="text-xl sm:text-2xl font-bold text-blue-700">{stats.aprovados}</p>
+        <div className="bg-blue-50 rounded-lg p-3 shadow-sm border border-blue-200">
+          <p className="text-xs text-blue-600">Aprovados</p>
+          <p className="text-xl font-bold text-blue-700">{stats.aprovados}</p>
         </div>
-        <div className="bg-purple-50 rounded-lg p-3 sm:p-4 border border-purple-200">
-          <p className="text-xs sm:text-sm text-purple-600">Em Separação</p>
-          <p className="text-xl sm:text-2xl font-bold text-purple-700">{stats.separacao}</p>
+        <div className="bg-green-50 rounded-lg p-3 shadow-sm border border-green-200">
+          <p className="text-xs text-green-600">Entregues</p>
+          <p className="text-xl font-bold text-green-700">{stats.entregues}</p>
         </div>
-        <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200">
-          <p className="text-xs sm:text-sm text-green-600">Entregues</p>
-          <p className="text-xl sm:text-2xl font-bold text-green-700">{stats.entregues}</p>
-        </div>
-        <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200">
-          <p className="text-xs sm:text-sm text-red-600">Cancelados</p>
-          <p className="text-xl sm:text-2xl font-bold text-red-700">{stats.cancelados}</p>
+        <div className="bg-red-50 rounded-lg p-3 shadow-sm border border-red-200">
+          <p className="text-xs text-red-600">Cancelados</p>
+          <p className="text-xl font-bold text-red-700">{stats.cancelados}</p>
         </div>
       </div>
 
@@ -489,8 +407,8 @@ export default function PedidosMateriais() {
                         </>
                       )}
                     </div>
-                   </td>
-                 </tr>
+                  </td>
+                </tr>
               ))}
               {pedidos.length === 0 && (
                 <tr>
@@ -509,6 +427,7 @@ export default function PedidosMateriais() {
         {pedidos.length > 0 ? (
           pedidos.map((pedido) => (
             <div key={pedido.id} className="bg-white rounded-lg shadow-sm border p-4">
+              {/* Header do Card */}
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -549,6 +468,7 @@ export default function PedidosMateriais() {
                 </div>
               </div>
 
+              {/* Informações */}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Itens:</span>
@@ -564,18 +484,33 @@ export default function PedidosMateriais() {
                 </div>
               </div>
 
+              {/* Lista de produtos */}
               <div className="mt-3 pt-3 border-t">
                 <p className="text-xs text-gray-500 mb-2">Produtos:</p>
                 <div className="space-y-1">
-                  {pedido.itens.slice(0, 2).map((item, idx) => (
+                  {pedido.itens.map((item, idx) => (
                     <div key={idx} className="text-xs flex justify-between">
                       <span className="text-gray-600">{item.produtoNome}</span>
                       <span className="font-medium">{item.quantidade} unid.</span>
                     </div>
                   ))}
-                  {pedido.itens.length > 2 && (
-                    <p className="text-xs text-gray-400">+ {pedido.itens.length - 2} outro(s)</p>
-                  )}
+                </div>
+              </div>
+
+              {/* Status de entrega dos itens */}
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-xs text-gray-500 mb-1">Entrega:</p>
+                <div className="text-xs">
+                  {pedido.itens.map((item, idx) => {
+                    const entregue = item.quantidadeEntregue || 0;
+                    const pendente = item.quantidade - entregue;
+                    return (
+                      <div key={idx} className="flex justify-between text-gray-600">
+                        <span>{item.produtoNome}</span>
+                        <span>{entregue}/{item.quantidade}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -584,54 +519,35 @@ export default function PedidosMateriais() {
           <div className="text-center py-12 bg-white rounded-lg border">
             <ShoppingCartIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">Você ainda não fez nenhum pedido</p>
-            <button onClick={() => {
-              resetForm();
-              setShowModal(true);
-            }} className="mt-4 text-blue-600 hover:text-blue-800">
+            <button onClick={() => setShowModal(true)} className="mt-4 text-blue-600 hover:text-blue-800">
               Fazer primeiro pedido
             </button>
           </div>
         )}
       </div>
 
-      {/* Modal de Novo/Editar Pedido - VERSÃO ORIGINAL CORRIGIDA */}
+      {/* Modal de Novo/Editar Pedido */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center z-10">
+            <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editingPedido ? 'Editar Pedido' : 'Novo Pedido'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowModal(false)} className="text-gray-400">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              {/* Tipo de Pedido - VERSÃO ORIGINAL */}
+              {/* Tipo de Pedido */}
               <div>
                 <label className="block text-sm font-medium mb-1">Tipo de Pedido</label>
                 <div className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2">
-                    <input 
-                      type="radio" 
-                      value="avulso" 
-                      checked={formData.tipo === 'avulso'} 
-                      onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
-                    />
+                    <input type="radio" value="avulso" checked={formData.tipo === 'avulso'} onChange={(e) => setFormData({...formData, tipo: e.target.value})} />
                     Avulso
                   </label>
                   <label className="flex items-center gap-2">
-                    <input 
-                      type="radio" 
-                      value="mensal" 
-                      checked={formData.tipo === 'mensal'} 
-                      onChange={(e) => {
-                        if (!podeFazerPedidoMensal && !editingPedido) {
-                          toast.error('Pedidos mensais só podem ser feitos entre os dias 20 e 30');
-                          return;
-                        }
-                        setFormData({...formData, tipo: e.target.value});
-                      }} 
-                    />
+                    <input type="radio" value="mensal" checked={formData.tipo === 'mensal'} onChange={(e) => setFormData({...formData, tipo: e.target.value})} disabled={!podeFazerPedidoMensal} />
                     Mensal {!podeFazerPedidoMensal && '(disponível dias 20-30)'}
                   </label>
                 </div>
@@ -641,53 +557,34 @@ export default function PedidosMateriais() {
               <div>
                 <label className="block text-sm font-medium mb-1">Unidade *</label>
                 <div className="relative">
-                  <input 
-                    type="text" 
-                    required 
-                    value={formData.unidade} 
-                    readOnly
-                    className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-700" 
-                  />
+                  <input type="text" required value={formData.unidade} disabled className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
                   <BuildingOfficeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 </div>
                 <p className="text-xs text-green-600 mt-1">✓ Unidade vinculada ao seu cadastro</p>
               </div>
 
-              {/* Produtos - VERSÃO ORIGINAL QUE FUNCIONAVA */}
+              {/* Produtos */}
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-md font-semibold text-gray-800 mb-3">Adicionar Produtos</h3>
                 
-                <div className="flex flex-col sm:flex-row gap-2 mb-3">
-                  <select
-                    value={selectedProduto?.id || ''}
-                    onChange={(e) => {
-                      const produto = produtos.find(p => p.id === e.target.value);
-                      setSelectedProduto(produto);
-                    }}
-                    className="flex-1 px-3 py-2 border rounded-lg bg-white"
-                  >
-                    <option value="">-- Selecione um produto --</option>
-                    {produtos.map(p => (
-                      <option key={p.id} value={p.id}>{p.nome} {p.marca && `- ${p.marca}`}</option>
-                    ))}
-                  </select>
+                <select
+                  value={selectedProduto?.id || ''}
+                  onChange={(e) => {
+                    const produto = produtos.find(p => p.id === e.target.value);
+                    setSelectedProduto(produto);
+                    setQuantidadeProduto(1);
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg bg-white mb-3"
+                >
+                  <option value="">-- Selecione um produto --</option>
+                  {produtos.map(p => (
+                    <option key={p.id} value={p.id}>{p.nome} {p.marca && `- ${p.marca}`}</option>
+                  ))}
+                </select>
 
-                  <input 
-                    type="number" 
-                    min="1" 
-                    value={quantidadeProduto} 
-                    onChange={(e) => setQuantidadeProduto(Number(e.target.value))} 
-                    className="w-24 px-3 py-2 border rounded-lg text-center" 
-                    placeholder="Qtd" 
-                  />
-                  
-                  <button 
-                    type="button" 
-                    onClick={adicionarItem} 
-                    className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition whitespace-nowrap"
-                  >
-                    + Adicionar
-                  </button>
+                <div className="flex gap-2 mb-3">
+                  <input type="number" min="1" value={quantidadeProduto} onChange={(e) => setQuantidadeProduto(Number(e.target.value))} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Quantidade" />
+                  <button type="button" onClick={adicionarItem} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Adicionar</button>
                 </div>
 
                 {formData.itens.length > 0 && (
@@ -711,7 +608,7 @@ export default function PedidosMateriais() {
                                 </td>
                                 <td className="px-3 py-2 text-center font-medium">{item.quantidade}</td>
                                 <td className="px-3 py-2 text-center">
-                                  <button type="button" onClick={() => removerItem(index)} className="text-red-500 hover:text-red-700">
+                                  <button type="button" onClick={() => removerItem(index)} className="text-red-500">
                                     <TrashIcon className="w-4 h-4" />
                                   </button>
                                 </td>
@@ -725,8 +622,7 @@ export default function PedidosMateriais() {
                 )}
 
                 {formData.itens.length === 0 && (
-                  <div className="text-center py-6 text-gray-400 text-sm border rounded-lg bg-gray-50">
-                    <ShoppingCartIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <div className="text-center py-4 text-gray-400 text-sm border rounded-lg bg-gray-50">
                     Nenhum produto adicionado ainda.
                   </div>
                 )}
@@ -735,22 +631,12 @@ export default function PedidosMateriais() {
               {/* Observações */}
               <div>
                 <label className="block text-sm font-medium mb-1">Observações</label>
-                <textarea 
-                  rows="3" 
-                  value={formData.observacoes} 
-                  onChange={(e) => setFormData({...formData, observacoes: e.target.value})} 
-                  className="w-full px-3 py-2 border rounded-lg resize-none" 
-                  placeholder="Informações adicionais sobre o pedido..."
-                />
+                <textarea rows="2" value={formData.observacoes} onChange={(e) => setFormData({...formData, observacoes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Informações adicionais sobre o pedido..." />
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition">
-                  Cancelar
-                </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                  {editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}
-                </button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">{editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}</button>
               </div>
             </form>
           </div>
@@ -761,9 +647,9 @@ export default function PedidosMateriais() {
       {showDetalhesModal && selectedPedido && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowDetalhesModal(false)}>
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+            <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-xl font-bold">Detalhes do Pedido</h2>
-              <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
@@ -794,39 +680,37 @@ export default function PedidosMateriais() {
               <div>
                 <h3 className="font-medium mb-2">Itens do Pedido</h3>
                 <div className="border rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Produto</th>
-                          <th className="px-3 py-2 text-center">Pedido</th>
-                          <th className="px-3 py-2 text-center">Entregue</th>
-                          <th className="px-3 py-2 text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedPedido.itens.map((item, index) => {
-                          const entregue = item.quantidadeEntregue || 0;
-                          const status = entregue === 0 ? '⏳ Pendente' : entregue === item.quantidade ? '✅ Completo' : '⚠️ Parcial';
-                          return (
-                            <tr key={index} className="border-t">
-                              <td className="px-3 py-2">{item.produtoNome} {item.marca && `(${item.marca})`}</td>
-                              <td className="px-3 py-2 text-center">{item.quantidade}</td>
-                              <td className="px-3 py-2 text-center">{entregue}</td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`text-xs ${
-                                  entregue === 0 ? 'text-gray-500' : 
-                                  entregue === item.quantidade ? 'text-green-600' : 'text-orange-600'
-                                }`}>
-                                  {status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Produto</th>
+                        <th className="px-3 py-2 text-center">Pedido</th>
+                        <th className="px-3 py-2 text-center">Entregue</th>
+                        <th className="px-3 py-2 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedPedido.itens.map((item, index) => {
+                        const entregue = item.quantidadeEntregue || 0;
+                        const status = entregue === 0 ? '⏳ Pendente' : entregue === item.quantidade ? '✅ Completo' : '⚠️ Parcial';
+                        return (
+                          <tr key={index} className="border-t">
+                            <td className="px-3 py-2">{item.produtoNome} {item.marca && `(${item.marca})`}</td>
+                            <td className="px-3 py-2 text-center">{item.quantidade}</td>
+                            <td className="px-3 py-2 text-center">{entregue}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`text-xs ${
+                                entregue === 0 ? 'text-gray-500' : 
+                                entregue === item.quantidade ? 'text-green-600' : 'text-orange-600'
+                              }`}>
+                                {status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -841,9 +725,8 @@ export default function PedidosMateriais() {
                 <h3 className="font-medium mb-2">Histórico</h3>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {selectedPedido.historico?.map((item, index) => (
-                    <div key={index} className="text-sm text-gray-600 border-l-2 border-blue-300 pl-3 py-1">
-                      <span className="text-gray-400 text-xs">{formatDateTime(item.data?.toDate?.() || item.data)}</span>
-                      <p>{item.acao} - <strong>{item.usuario}</strong></p>
+                    <div key={index} className="text-sm text-gray-600">
+                      <span className="text-gray-400">{formatDateTime(item.data?.toDate?.() || item.data)}</span> - {item.acao} - <strong>{item.usuario}</strong>
                     </div>
                   ))}
                 </div>
