@@ -58,13 +58,12 @@ export default function DentistaChamados() {
   const [showAvaliarModal, setShowAvaliarModal] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState(null);
   const [unidadeUsuario, setUnidadeUsuario] = useState('');
-  const [midiaAmpliada, setMidiaAmpliada] = useState(null);
   const [showChatModal, setShowChatModal] = useState(false);
   const [chamadoSelecionadoChat, setChamadoSelecionadoChat] = useState(null);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState({});
   
   // Estados para mídia
-  const [midiaTipo, setMidiaTipo] = useState('foto'); // 'foto' ou 'video'
+  const [midiaTipo, setMidiaTipo] = useState('foto');
   const [arquivosMidia, setArquivosMidia] = useState([]);
   
   const [formData, setFormData] = useState({
@@ -140,7 +139,7 @@ export default function DentistaChamados() {
     return () => unsubscribe();
   }, [userData]);
 
-  // Buscar mensagens não lidas para cada chamado
+  // Buscar mensagens não lidas
   useEffect(() => {
     if (!chamados.length) return;
     
@@ -169,7 +168,7 @@ export default function DentistaChamados() {
     };
   }, [chamados]);
 
-  // Função para validar arquivo
+  // Validar arquivo
   const validarArquivo = (file) => {
     const isFoto = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
@@ -192,7 +191,6 @@ export default function DentistaChamados() {
     return true;
   };
 
-  // Função para lidar com seleção de arquivos
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
     
@@ -212,12 +210,10 @@ export default function DentistaChamados() {
     setArquivosMidia(prev => [...prev, ...novosArquivos]);
   };
 
-  // Função para remover arquivo
   const removerArquivo = (index) => {
     setArquivosMidia(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Função para fazer upload dos arquivos
   const uploadArquivos = async () => {
     const fotosUrls = [];
     const videosUrls = [];
@@ -239,7 +235,6 @@ export default function DentistaChamados() {
     return { fotosUrls, videosUrls };
   };
 
-  // Criar novo chamado com mídia
   const handleSubmitNovoChamado = async (e) => {
     e.preventDefault();
     
@@ -291,7 +286,6 @@ export default function DentistaChamados() {
     }
   };
 
-  // Editar chamado
   const handleEditarChamado = async (e) => {
     e.preventDefault();
     
@@ -330,7 +324,6 @@ export default function DentistaChamados() {
     }
   };
 
-  // Abrir modal de edição
   const abrirEditarChamado = (chamado) => {
     setSelectedChamado(chamado);
     setFormData({
@@ -384,22 +377,15 @@ export default function DentistaChamados() {
     }
   };
 
-  // Função para visualizar mídia ampliada
+  // Componente MediaViewer
   const MediaViewer = ({ src, type }) => {
     const [isOpen, setIsOpen] = useState(false);
 
     if (!isOpen) {
       return (
-        <div 
-          className="relative group cursor-pointer"
-          onClick={() => setIsOpen(true)}
-        >
+        <div className="relative group cursor-pointer" onClick={() => setIsOpen(true)}>
           {type === 'foto' ? (
-            <img
-              src={src}
-              alt="Mídia do chamado"
-              className="w-full h-24 object-cover rounded-lg"
-            />
+            <img src={src} alt="Mídia do chamado" className="w-full h-24 object-cover rounded-lg" />
           ) : (
             <div className="w-full h-24 bg-gray-800 rounded-lg flex items-center justify-center relative">
               <FilmIcon className="w-8 h-8 text-white opacity-80" />
@@ -414,30 +400,14 @@ export default function DentistaChamados() {
     }
 
     return (
-      <div 
-        className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]"
-        onClick={() => setIsOpen(false)}
-      >
-        <button
-          onClick={() => setIsOpen(false)}
-          className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
-        >
+      <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]" onClick={() => setIsOpen(false)}>
+        <button onClick={() => setIsOpen(false)} className="absolute top-4 right-4 text-white hover:text-gray-300 z-10">
           <XMarkIcon className="w-8 h-8" />
         </button>
-        
         {type === 'foto' ? (
-          <img
-            src={src}
-            alt="Mídia ampliada"
-            className="max-w-full max-h-full object-contain"
-          />
+          <img src={src} alt="Mídia ampliada" className="max-w-full max-h-full object-contain" />
         ) : (
-          <video
-            src={src}
-            controls
-            className="max-w-full max-h-full"
-            autoPlay
-          />
+          <video src={src} controls className="max-w-full max-h-full" autoPlay />
         )}
       </div>
     );
@@ -451,7 +421,6 @@ export default function DentistaChamados() {
     return matchesSearch && matchesStatus;
   });
 
-  // Estatísticas
   const stats = {
     total: chamados.length,
     abertos: chamados.filter(c => c.status === 'aberto').length,
@@ -542,11 +511,11 @@ export default function DentistaChamados() {
         </button>
       </div>
 
-      {/* Cards Estatísticas */}
+      {/* Cards Estatísticas - VERSÃO CORRIGIDA */}
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
         <div className="bg-white rounded-lg p-3 shadow-sm border">
           <p className="text-xs text-gray-500">Total</p>
-          <p className="text-xl font-bold">{stats.total}</p>
+          <p className="text-xl font-bold text-gray-800">{stats.total}</p>
         </div>
         <div className="bg-yellow-50 rounded-lg p-3 shadow-sm border border-yellow-200">
           <div className="flex items-center justify-between">
@@ -579,7 +548,7 @@ export default function DentistaChamados() {
         <div className="bg-gray-50 rounded-lg p-3 shadow-sm border border-gray-200">
           <div className="flex items-center justify-between">
             <PauseIcon className="w-4 h-4 text-gray-500" />
-            <p className="text-xl font-bold text-gray-700}>{stats.emPausa}</p>
+            <p className="text-xl font-bold text-gray-700">{stats.emPausa}</p>
           </div>
           <p className="text-xs text-gray-600 mt-1">Em Pausa</p>
         </div>
@@ -609,14 +578,14 @@ export default function DentistaChamados() {
           onChange={(e) => setFiltroStatus(e.target.value)}
           className="px-3 py-2 border rounded-lg text-sm min-w-[180px]"
         >
-          <option value="todos">📋 Todos os status</option>
-          <option value="aberto">🟡 Abertos</option>
-          <option value="em_andamento">🔵 Em Andamento</option>
-          <option value="aguardando_pecas">🟠 Aguardando Peças</option>
-          <option value="em_oficina">🟣 Em Oficina</option>
-          <option value="em_pausa">⚪ Em Pausa</option>
-          <option value="concluido">🟢 Concluídos</option>
-          <option value="cancelado">🔴 Cancelados</option>
+          <option value="todos">Todos os status</option>
+          <option value="aberto">Abertos</option>
+          <option value="em_andamento">Em Andamento</option>
+          <option value="aguardando_pecas">Aguardando Peças</option>
+          <option value="em_oficina">Em Oficina</option>
+          <option value="em_pausa">Em Pausa</option>
+          <option value="concluido">Concluídos</option>
+          <option value="cancelado">Cancelados</option>
         </select>
       </div>
 
@@ -633,7 +602,7 @@ export default function DentistaChamados() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Prioridade</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Data</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Ações</th>
-              <tr>
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredChamados.map((chamado) => (
@@ -655,70 +624,37 @@ export default function DentistaChamados() {
                   <td className="px-4 py-3 text-sm">{formatDate(chamado.dataCriacao)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedChamado(chamado);
-                          setShowDetalhesModal(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Visualizar"
-                      >
+                      <button onClick={() => { setSelectedChamado(chamado); setShowDetalhesModal(true); }} className="text-blue-600 hover:text-blue-800">
                         <EyeIcon className="w-5 h-5" />
                       </button>
                       {chamado.status === 'aberto' && (
                         <>
-                          <button
-                            onClick={() => abrirEditarChamado(chamado)}
-                            className="text-green-600 hover:text-green-800"
-                            title="Editar"
-                          >
+                          <button onClick={() => abrirEditarChamado(chamado)} className="text-green-600 hover:text-green-800">
                             <PencilIcon className="w-5 h-5" />
                           </button>
-                          <button
-                            onClick={() => handleCancelarChamado(chamado.id)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Cancelar"
-                          >
+                          <button onClick={() => handleCancelarChamado(chamado.id)} className="text-red-600 hover:text-red-800">
                             <XMarkIcon className="w-5 h-5" />
                           </button>
                         </>
                       )}
                       {chamado.status === 'cancelado' && (
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Reabrir este chamado?')) {
-                              updateDoc(doc(db, 'chamados', chamado.id), {
-                                status: 'aberto',
-                                historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto pelo solicitante', usuario: userData.nome }]
-                              }).then(() => toast.success('Chamado reaberto!'));
-                            }
-                          }}
-                          className="text-orange-600 hover:text-orange-800"
-                          title="Reabrir"
-                        >
+                        <button onClick={() => {
+                          if (window.confirm('Reabrir este chamado?')) {
+                            updateDoc(doc(db, 'chamados', chamado.id), {
+                              status: 'aberto',
+                              historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto pelo solicitante', usuario: userData.nome }]
+                            }).then(() => toast.success('Chamado reaberto!'));
+                          }
+                        }} className="text-orange-600 hover:text-orange-800">
                           <ArrowPathIcon className="w-5 h-5" />
                         </button>
                       )}
                       {chamado.status === 'concluido' && !chamado.avaliacao && (
-                        <button
-                          onClick={() => {
-                            setSelectedChamado(chamado);
-                            setShowAvaliarModal(true);
-                          }}
-                          className="text-yellow-600 hover:text-yellow-800"
-                          title="Avaliar"
-                        >
+                        <button onClick={() => { setSelectedChamado(chamado); setShowAvaliarModal(true); }} className="text-yellow-600 hover:text-yellow-800">
                           <StarIcon className="w-5 h-5" />
                         </button>
                       )}
-                      <button
-                        onClick={() => {
-                          setChamadoSelecionadoChat(chamado);
-                          setShowChatModal(true);
-                        }}
-                        className="text-purple-600 hover:text-purple-800 relative"
-                        title="Chat"
-                      >
+                      <button onClick={() => { setChamadoSelecionadoChat(chamado); setShowChatModal(true); }} className="text-purple-600 hover:text-purple-800 relative">
                         <ChatBubbleLeftIcon className="w-5 h-5" />
                         {mensagensNaoLidas[chamado.id] > 0 && (
                           <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
@@ -746,7 +682,6 @@ export default function DentistaChamados() {
       <div className="md:hidden space-y-4">
         {filteredChamados.map((chamado) => (
           <div key={chamado.id} className="bg-white rounded-lg shadow-sm border p-4">
-            {/* Header do Card */}
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">#{chamado.id?.slice(-6)}</span>
@@ -758,72 +693,38 @@ export default function DentistaChamados() {
                   {chamado.prioridade}
                 </span>
               </div>
-              
               <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedChamado(chamado);
-                    setShowDetalhesModal(true);
-                  }}
-                  className="text-blue-600"
-                  title="Detalhes"
-                >
+                <button onClick={() => { setSelectedChamado(chamado); setShowDetalhesModal(true); }} className="text-blue-600">
                   <EyeIcon className="w-5 h-5" />
                 </button>
                 {chamado.status === 'aberto' && (
                   <>
-                    <button
-                      onClick={() => abrirEditarChamado(chamado)}
-                      className="text-green-600"
-                      title="Editar"
-                    >
+                    <button onClick={() => abrirEditarChamado(chamado)} className="text-green-600">
                       <PencilIcon className="w-5 h-5" />
                     </button>
-                    <button
-                      onClick={() => handleCancelarChamado(chamado.id)}
-                      className="text-red-600"
-                      title="Cancelar"
-                    >
+                    <button onClick={() => handleCancelarChamado(chamado.id)} className="text-red-600">
                       <XMarkIcon className="w-5 h-5" />
                     </button>
                   </>
                 )}
                 {chamado.status === 'cancelado' && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm('Reabrir este chamado?')) {
-                        updateDoc(doc(db, 'chamados', chamado.id), {
-                          status: 'aberto',
-                          historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto', usuario: userData.nome }]
-                        }).then(() => toast.success('Chamado reaberto!'));
-                      }
-                    }}
-                    className="text-orange-600"
-                    title="Reabrir"
-                  >
+                  <button onClick={() => {
+                    if (window.confirm('Reabrir este chamado?')) {
+                      updateDoc(doc(db, 'chamados', chamado.id), {
+                        status: 'aberto',
+                        historico: [...(chamado.historico || []), { data: new Date(), acao: 'Chamado reaberto', usuario: userData.nome }]
+                      }).then(() => toast.success('Chamado reaberto!'));
+                    }
+                  }} className="text-orange-600">
                     <ArrowPathIcon className="w-5 h-5" />
                   </button>
                 )}
                 {chamado.status === 'concluido' && !chamado.avaliacao && (
-                  <button
-                    onClick={() => {
-                      setSelectedChamado(chamado);
-                      setShowAvaliarModal(true);
-                    }}
-                    className="text-yellow-600"
-                    title="Avaliar"
-                  >
+                  <button onClick={() => { setSelectedChamado(chamado); setShowAvaliarModal(true); }} className="text-yellow-600">
                     <StarIcon className="w-5 h-5" />
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    setChamadoSelecionadoChat(chamado);
-                    setShowChatModal(true);
-                  }}
-                  className="text-purple-600 relative"
-                  title="Chat"
-                >
+                <button onClick={() => { setChamadoSelecionadoChat(chamado); setShowChatModal(true); }} className="text-purple-600 relative">
                   <ChatBubbleLeftIcon className="w-5 h-5" />
                   {mensagensNaoLidas[chamado.id] > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
@@ -833,50 +734,32 @@ export default function DentistaChamados() {
                 </button>
               </div>
             </div>
-
-            {/* Título e Equipamento */}
             <h3 className="font-semibold text-gray-800 text-base mb-1">{chamado.titulo}</h3>
             <p className="text-sm text-gray-600 mb-2">{chamado.equipamento}</p>
-            
-            {/* Unidade */}
             {chamado.unidade && (
               <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
                 <MapPinIcon className="w-3 h-3" />
                 {chamado.unidade}
               </div>
             )}
-
-            {/* Data */}
             <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
               <CalendarIcon className="w-3 h-3" />
               {formatDate(chamado.dataCriacao)}
             </div>
-
-            {/* Técnico */}
             <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
               <UserCircleIcon className="w-3 h-3" />
               {chamado.tecnicoNome || 'Aguardando técnico'}
             </div>
-
-            {/* Atualizações */}
             <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
               <ChatBubbleLeftIcon className="w-3 h-3" />
               {chamado.historico?.length || 0} atualizações
             </div>
-
-            {/* Mídia */}
             {(chamado.fotos?.length > 0 || chamado.videos?.length > 0) && (
               <div className="mt-2 pt-2 border-t flex gap-3 text-xs">
-                {chamado.fotos?.length > 0 && (
-                  <span className="text-blue-500">📷 {chamado.fotos.length} foto(s)</span>
-                )}
-                {chamado.videos?.length > 0 && (
-                  <span className="text-purple-500">🎥 {chamado.videos.length} vídeo(s)</span>
-                )}
+                {chamado.fotos?.length > 0 && <span className="text-blue-500">📷 {chamado.fotos.length} foto(s)</span>}
+                {chamado.videos?.length > 0 && <span className="text-purple-500">🎥 {chamado.videos.length} vídeo(s)</span>}
               </div>
             )}
-
-            {/* Última atualização */}
             {chamado.historico && chamado.historico.length > 0 && (
               <div className="mt-2 pt-2 border-t text-xs text-gray-400">
                 Última: {chamado.historico[chamado.historico.length - 1].acao}
@@ -886,7 +769,7 @@ export default function DentistaChamados() {
         ))}
       </div>
 
-      {/* MODAL NOVO CHAMADO - COM UPLOAD DE MÍDIA */}
+      {/* MODAL NOVO CHAMADO */}
       {showNovoChamadoModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowNovoChamadoModal(false)}>
           <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -924,88 +807,44 @@ export default function DentistaChamados() {
                 </select>
               </div>
 
-              {/* SEÇÃO DE UPLOAD DE MÍDIA */}
+              {/* Seção de upload */}
               <div>
                 <label className="block text-sm font-medium mb-2">Fotos e Vídeos (opcional)</label>
-                
-                {/* Tabs para selecionar tipo */}
                 <div className="flex gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setMidiaTipo('foto')}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm ${
-                      midiaTipo === 'foto' 
-                        ? 'bg-blue-100 text-blue-700' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
+                  <button type="button" onClick={() => setMidiaTipo('foto')} className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm ${midiaTipo === 'foto' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     <PhotoIcon className="w-4 h-4" />
-                    Fotos (máx 5 - até 10MB)
+                    Fotos
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setMidiaTipo('video')}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm ${
-                      midiaTipo === 'video' 
-                        ? 'bg-blue-100 text-blue-700' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
+                  <button type="button" onClick={() => setMidiaTipo('video')} className={`flex items-center gap-1 px-3 py-1 rounded-lg text-sm ${midiaTipo === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     <FilmIcon className="w-4 h-4" />
-                    Vídeos (máx 5 - até 50MB)
+                    Vídeos
                   </button>
                 </div>
-
-                {/* Área de upload */}
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-                  <input
-                    type="file"
-                    multiple
-                    accept={midiaTipo === 'foto' ? "image/*" : "video/*"}
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="midia-upload"
-                    disabled={uploading}
-                  />
-                  <label
-                    htmlFor="midia-upload"
-                    className="flex flex-col items-center cursor-pointer"
-                  >
+                  <input type="file" multiple accept={midiaTipo === 'foto' ? "image/*" : "video/*"} onChange={handleFileChange} className="hidden" id="midia-upload" disabled={uploading} />
+                  <label htmlFor="midia-upload" className="flex flex-col items-center cursor-pointer">
                     {midiaTipo === 'foto' ? (
                       <>
                         <PhotoIcon className="w-12 h-12 text-gray-400" />
-                        <span className="text-sm text-gray-500 mt-2">
-                          Clique para adicionar fotos
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          PNG, JPG até 10MB (máx 5 fotos)
-                        </span>
+                        <span className="text-sm text-gray-500 mt-2">Clique para adicionar fotos</span>
+                        <span className="text-xs text-gray-400">PNG, JPG até 10MB (máx 5)</span>
                       </>
                     ) : (
                       <>
                         <FilmIcon className="w-12 h-12 text-gray-400" />
-                        <span className="text-sm text-gray-500 mt-2">
-                          Clique para adicionar vídeos
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          MP4, MOV até 50MB (máx 5 vídeos)
-                        </span>
+                        <span className="text-sm text-gray-500 mt-2">Clique para adicionar vídeos</span>
+                        <span className="text-xs text-gray-400">MP4, MOV até 50MB (máx 5)</span>
                       </>
                     )}
                   </label>
                 </div>
-
-                {/* Preview dos arquivos */}
                 {arquivosMidia.length > 0 && (
                   <div className="mt-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Arquivos selecionados ({arquivosMidia.length}):
-                    </p>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Arquivos selecionados ({arquivosMidia.length}):</p>
                     <div className="flex flex-wrap gap-2">
                       {arquivosMidia.map((arquivo, index) => {
                         const isVideo = arquivo.type.startsWith('video/');
                         const tamanhoMB = (arquivo.size / (1024 * 1024)).toFixed(2);
-                        
                         return (
                           <div key={index} className="relative">
                             {isVideo ? (
@@ -1014,23 +853,12 @@ export default function DentistaChamados() {
                                 <PlayIcon className="w-4 h-4 text-white absolute bottom-1 right-1" />
                               </div>
                             ) : (
-                              <img
-                                src={URL.createObjectURL(arquivo)}
-                                alt={`Preview ${index}`}
-                                className="w-20 h-20 object-cover rounded-lg"
-                              />
+                              <img src={URL.createObjectURL(arquivo)} alt={`Preview ${index}`} className="w-20 h-20 object-cover rounded-lg" />
                             )}
-                            <button
-                              type="button"
-                              onClick={() => removerArquivo(index)}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                              disabled={uploading}
-                            >
+                            <button type="button" onClick={() => removerArquivo(index)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600" disabled={uploading}>
                               <XMarkIcon className="w-3 h-3" />
                             </button>
-                            <span className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs text-center py-1 rounded-b-lg">
-                              {tamanhoMB}MB
-                            </span>
+                            <span className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs text-center py-1 rounded-b-lg">{tamanhoMB}MB</span>
                           </div>
                         );
                       })}
@@ -1041,9 +869,7 @@ export default function DentistaChamados() {
 
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowNovoChamadoModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button>
-                <button type="submit" disabled={uploading} className="px-4 py-2 bg-blue-600 text-white rounded-lg">
-                  {uploading ? 'Enviando...' : 'Criar Chamado'}
-                </button>
+                <button type="submit" disabled={uploading} className="px-4 py-2 bg-blue-600 text-white rounded-lg">{uploading ? 'Enviando...' : 'Criar Chamado'}</button>
               </div>
             </form>
           </div>
@@ -1095,7 +921,7 @@ export default function DentistaChamados() {
         </div>
       )}
 
-      {/* MODAL DETALHES - COM VISUALIZAÇÃO DE MÍDIA */}
+      {/* MODAL DETALHES COM MÍDIA */}
       {showDetalhesModal && selectedChamado && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowDetalhesModal(false)}>
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -1119,7 +945,7 @@ export default function DentistaChamados() {
               </div>
               <div><p className="text-xs text-gray-500 mb-1">Descrição</p><div className="bg-gray-50 p-3 rounded-lg"><p className="text-gray-700">{selectedChamado.descricao}</p></div></div>
 
-              {/* Fotos do chamado */}
+              {/* Fotos */}
               {selectedChamado.fotos && selectedChamado.fotos.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-500 mb-2">Fotos Anexadas</p>
@@ -1131,7 +957,7 @@ export default function DentistaChamados() {
                 </div>
               )}
 
-              {/* Vídeos do chamado */}
+              {/* Vídeos */}
               {selectedChamado.videos && selectedChamado.videos.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-500 mb-2">Vídeos Anexados</p>
@@ -1163,9 +989,18 @@ export default function DentistaChamados() {
           <div className="bg-white rounded-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b"><h2 className="text-xl font-bold">Avaliar Atendimento</h2></div>
             <div className="p-4 space-y-4">
-              <div className="flex justify-center gap-2">{[1,2,3,4,5].map(nota => (<button key={nota} onClick={() => setAvaliacao({...avaliacao, nota})}>{nota <= avaliacao.nota ? <StarIconSolid className="w-8 h-8 text-yellow-400" /> : <StarIcon className="w-8 h-8 text-gray-300" />}</button>))}</div>
+              <div className="flex justify-center gap-2">
+                {[1,2,3,4,5].map(nota => (
+                  <button key={nota} onClick={() => setAvaliacao({...avaliacao, nota})}>
+                    {nota <= avaliacao.nota ? <StarIconSolid className="w-8 h-8 text-yellow-400" /> : <StarIcon className="w-8 h-8 text-gray-300" />}
+                  </button>
+                ))}
+              </div>
               <textarea rows="3" value={avaliacao.comentario} onChange={(e) => setAvaliacao({...avaliacao, comentario: e.target.value})} placeholder="Deixe seu comentário sobre o atendimento..." className="w-full px-3 py-2 border rounded-lg" />
-              <div className="flex justify-end gap-3"><button onClick={() => setShowAvaliarModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button><button onClick={handleAvaliarChamado} className="px-4 py-2 bg-yellow-500 text-white rounded-lg">Enviar Avaliação</button></div>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowAvaliarModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button>
+                <button onClick={handleAvaliarChamado} className="px-4 py-2 bg-yellow-500 text-white rounded-lg">Enviar Avaliação</button>
+              </div>
             </div>
           </div>
         </div>
