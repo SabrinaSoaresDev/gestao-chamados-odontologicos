@@ -81,14 +81,16 @@ export default function PedidosMateriais() {
 
     const pedidosQuery = query(
       collection(db, 'pedidos'),
-      where('dentistaId', '==', userData.uid)
+      where('dentistaId', '==', userData.uid),
+      orderBy('dataPedido', 'desc')
     );
 
     const unsubscribePedidos = onSnapshot(pedidosQuery, (snapshot) => {
       const pedidosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        dataPedido: doc.data().dataPedido?.toDate()
+        dataPedido: doc.data().dataPedido?.toDate(),
+        dataEntrega: doc.data().dataEntrega?.toDate()
       }));
       setPedidos(pedidosData);
       setLoading(false);
@@ -133,7 +135,7 @@ export default function PedidosMateriais() {
             : i
         )
       });
-      toast.success(`${quantidadeProduto} unidade(s) adicionada(s)`);
+      toast.success(`${quantidadeProduto} unidade(s) adicionada(s) a ${selectedProduto.nome}`);
     } else {
       const novoItem = {
         produtoId: selectedProduto.id,
@@ -149,6 +151,7 @@ export default function PedidosMateriais() {
       toast.success(`${selectedProduto.nome} adicionado!`);
     }
     setQuantidadeProduto(1);
+    setSelectedProduto(null);
   };
 
   const removerItem = (index) => {
@@ -162,34 +165,83 @@ export default function PedidosMateriais() {
     e.preventDefault();
     
     if (formData.itens.length === 0) {
-      toast.error('Adicione pelo menos um item');
+      toast.error('Adicione pelo menos um item ao pedido');
       return;
     }
+    
     if (!formData.unidade) {
-      toast.error('Informe a unidade');
+      toast.error('Unidade não encontrada. Contate o administrador.');
       return;
     }
+    
     if (!userData?.uid) {
       toast.error('Usuário não identificado');
       return;
     }
 
+    // Validar pedido mensal
+    if (formData.tipo === 'mensal' && !podeFazerPedidoMensal) {
+      toast.error('Pedidos mensais só podem ser feitos entre os dias 20 e 30 de cada mês');
+      return;
+    }
+
+    // Verificar se já existe pedido mensal no mês
+    if (formData.tipo === 'mensal') {
+      const pedidoMensalExistente = pedidos.find(p => {
+        if (p.tipo !== 'mensal') return false;
+        const dataPedido = p.dataPedido?.toDate ? p.dataPedido.toDate() : new Date(p.dataPedido);
+        return dataPedido.getMonth() === hoje.getMonth() && 
+               dataPedido.getFullYear() === hoje.getFullYear() &&
+               p.status !== 'cancelado';
+      });
+      
+      if (pedidoMensalExistente && !editingPedido) {
+        toast.error('Você já possui um pedido mensal neste mês. Aguarde a aprovação ou faça um pedido avulso.');
+        return;
+      }
+    }
+
     try {
       const pedidoData = {
         dentistaId: userData.uid,
-        dentistaNome: userData.nome || 'Dentista',
+        dentistaNome: userData.nome || userData.displayName || 'Dentista',
         unidade: formData.unidade,
         tipo: formData.tipo,
         status: 'pendente',
-        itens: formData.itens,
-        observacoes: formData.observacoes,
+        itens: formData.itens.map(item => ({
+          ...item,
+          quantidadeEntregue: 0
+        })),
+        observacoes: formData.observacoes || '',
         dataPedido: new Date(),
-        dataLimite: formData.tipo === 'mensal' ? new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0) : null,
-        historico: [{ data: new Date(), acao: 'Pedido criado', usuario: userData.nome || 'Dentista' }]
+        dataLimite: formData.tipo === 'mensal' ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0) : null,
+        historico: [{ 
+          data: new Date(), 
+          acao: 'Pedido criado', 
+          usuario: userData.nome || userData.displayName || 'Dentista',
+          tipo: 'criacao'
+        }]
       };
       
-      await addDoc(collection(db, 'pedidos'), pedidoData);
-      toast.success('Pedido enviado!');
+      if (editingPedido) {
+        await updateDoc(doc(db, 'pedidos', editingPedido.id), {
+          ...pedidoData,
+          historico: [
+            ...pedidoData.historico,
+            { 
+              data: new Date(), 
+              acao: 'Pedido editado', 
+              usuario: userData.nome || userData.displayName || 'Dentista',
+              tipo: 'edicao'
+            }
+          ]
+        });
+        toast.success('Pedido atualizado com sucesso!');
+      } else {
+        await addDoc(collection(db, 'pedidos'), pedidoData);
+        toast.success('Pedido enviado com sucesso!');
+      }
+      
       setShowModal(false);
       resetForm();
     } catch (error) {
@@ -200,8 +252,13 @@ export default function PedidosMateriais() {
 
   const handleDelete = async (id) => {
     if (window.confirm('Tem certeza que deseja cancelar este pedido?')) {
-      await deleteDoc(doc(db, 'pedidos', id));
-      toast.success('Pedido cancelado');
+      try {
+        await deleteDoc(doc(db, 'pedidos', id));
+        toast.success('Pedido cancelado com sucesso');
+      } catch (error) {
+        console.error('Erro ao cancelar pedido:', error);
+        toast.error('Erro ao cancelar pedido');
+      }
     }
   };
 
@@ -218,11 +275,18 @@ export default function PedidosMateriais() {
   };
 
   const handleEdit = (pedido) => {
+    if (pedido.status !== 'pendente') {
+      toast.error('Apenas pedidos pendentes podem ser editados');
+      return;
+    }
     setEditingPedido(pedido);
     setFormData({
       tipo: pedido.tipo,
       unidade: pedido.unidade,
-      itens: pedido.itens,
+      itens: pedido.itens.map(item => ({
+        ...item,
+        quantidadeEntregue: item.quantidadeEntregue || 0
+      })),
       observacoes: pedido.observacoes || ''
     });
     setShowModal(true);
@@ -232,6 +296,7 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return 'bg-yellow-100 text-yellow-800';
       case 'aprovado': return 'bg-blue-100 text-blue-800';
+      case 'separacao': return 'bg-purple-100 text-purple-800';
       case 'entregue': return 'bg-green-100 text-green-800';
       case 'cancelado': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100';
@@ -242,6 +307,7 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return <ClockIcon className="w-4 h-4" />;
       case 'aprovado': return <CheckCircleIcon className="w-4 h-4" />;
+      case 'separacao': return <PencilIcon className="w-4 h-4" />;
       case 'entregue': return <TruckIcon className="w-4 h-4" />;
       case 'cancelado': return <XMarkIcon className="w-4 h-4" />;
       default: return null;
@@ -252,6 +318,7 @@ export default function PedidosMateriais() {
     switch(status) {
       case 'pendente': return 'Pendente';
       case 'aprovado': return 'Aprovado';
+      case 'separacao': return 'Em Separação';
       case 'entregue': return 'Entregue';
       case 'cancelado': return 'Cancelado';
       default: return status;
@@ -272,6 +339,7 @@ export default function PedidosMateriais() {
     total: pedidos.length,
     pendentes: pedidos.filter(p => p.status === 'pendente').length,
     aprovados: pedidos.filter(p => p.status === 'aprovado').length,
+    separacao: pedidos.filter(p => p.status === 'separacao').length,
     entregues: pedidos.filter(p => p.status === 'entregue').length,
     cancelados: pedidos.filter(p => p.status === 'cancelado').length
   };
@@ -291,14 +359,13 @@ export default function PedidosMateriais() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Meus Pedidos de Materiais</h1>
           <p className="text-gray-600">Solicite materiais para sua unidade</p>
-         
         </div>
         <button
           onClick={() => {
             resetForm();
             setShowModal(true);
           }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
         >
           <PlusIcon className="w-5 h-5" />
           Novo Pedido
@@ -311,14 +378,14 @@ export default function PedidosMateriais() {
           <div className="flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-green-600" />
             <p className="text-green-800 text-sm">
-              <strong>Período de pedido mensal!</strong> Você pode fazer seu pedido mensal entre os dias 20 e 30.
+              <strong>Período de pedido mensal!</strong> Você pode fazer seu pedido mensal entre os dias 20 e 30 de cada mês.
             </p>
           </div>
         </div>
       )}
 
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <div className="bg-white rounded-lg p-3 shadow-sm border">
           <p className="text-xs text-gray-500">Total</p>
           <p className="text-xl font-bold">{stats.total}</p>
@@ -330,6 +397,10 @@ export default function PedidosMateriais() {
         <div className="bg-blue-50 rounded-lg p-3 shadow-sm border border-blue-200">
           <p className="text-xs text-blue-600">Aprovados</p>
           <p className="text-xl font-bold text-blue-700">{stats.aprovados}</p>
+        </div>
+        <div className="bg-purple-50 rounded-lg p-3 shadow-sm border border-purple-200">
+          <p className="text-xs text-purple-600">Em Separação</p>
+          <p className="text-xl font-bold text-purple-700">{stats.separacao}</p>
         </div>
         <div className="bg-green-50 rounded-lg p-3 shadow-sm border border-green-200">
           <p className="text-xs text-green-600">Entregues</p>
@@ -427,7 +498,6 @@ export default function PedidosMateriais() {
         {pedidos.length > 0 ? (
           pedidos.map((pedido) => (
             <div key={pedido.id} className="bg-white rounded-lg shadow-sm border p-4">
-              {/* Header do Card */}
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -468,7 +538,6 @@ export default function PedidosMateriais() {
                 </div>
               </div>
 
-              {/* Informações */}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Itens:</span>
@@ -484,7 +553,6 @@ export default function PedidosMateriais() {
                 </div>
               </div>
 
-              {/* Lista de produtos */}
               <div className="mt-3 pt-3 border-t">
                 <p className="text-xs text-gray-500 mb-2">Produtos:</p>
                 <div className="space-y-1">
@@ -497,13 +565,11 @@ export default function PedidosMateriais() {
                 </div>
               </div>
 
-              {/* Status de entrega dos itens */}
               <div className="mt-3 pt-3 border-t">
                 <p className="text-xs text-gray-500 mb-1">Entrega:</p>
                 <div className="text-xs">
                   {pedido.itens.map((item, idx) => {
                     const entregue = item.quantidadeEntregue || 0;
-                    const pendente = item.quantidade - entregue;
                     return (
                       <div key={idx} className="flex justify-between text-gray-600">
                         <span>{item.produtoNome}</span>
@@ -519,7 +585,10 @@ export default function PedidosMateriais() {
           <div className="text-center py-12 bg-white rounded-lg border">
             <ShoppingCartIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">Você ainda não fez nenhum pedido</p>
-            <button onClick={() => setShowModal(true)} className="mt-4 text-blue-600 hover:text-blue-800">
+            <button onClick={() => {
+              resetForm();
+              setShowModal(true);
+            }} className="mt-4 text-blue-600 hover:text-blue-800">
               Fazer primeiro pedido
             </button>
           </div>
@@ -532,7 +601,7 @@ export default function PedidosMateriais() {
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-lg font-bold">{editingPedido ? 'Editar Pedido' : 'Novo Pedido'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400">
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
@@ -540,15 +609,26 @@ export default function PedidosMateriais() {
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               {/* Tipo de Pedido */}
               <div>
-                <label className="block text-sm font-medium mb-1">Tipo de Pedido</label>
+                <label className="block text-sm font-medium mb-1">Tipo de Pedido *</label>
                 <div className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2">
-                    <input type="radio" value="avulso" checked={formData.tipo === 'avulso'} onChange={(e) => setFormData({...formData, tipo: e.target.value})} />
-                    Avulso
+                    <input 
+                      type="radio" 
+                      value="avulso" 
+                      checked={formData.tipo === 'avulso'} 
+                      onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
+                    />
+                    <span>📦 Avulso</span>
                   </label>
                   <label className="flex items-center gap-2">
-                    <input type="radio" value="mensal" checked={formData.tipo === 'mensal'} onChange={(e) => setFormData({...formData, tipo: e.target.value})} disabled={!podeFazerPedidoMensal} />
-                    Mensal {!podeFazerPedidoMensal && '(disponível dias 20-30)'}
+                    <input 
+                      type="radio" 
+                      value="mensal" 
+                      checked={formData.tipo === 'mensal'} 
+                      onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
+                      disabled={!podeFazerPedidoMensal && !editingPedido}
+                    />
+                    <span>📅 Mensal {!podeFazerPedidoMensal && '(disponível dias 20-30)'}</span>
                   </label>
                 </div>
               </div>
@@ -557,7 +637,13 @@ export default function PedidosMateriais() {
               <div>
                 <label className="block text-sm font-medium mb-1">Unidade *</label>
                 <div className="relative">
-                  <input type="text" required value={formData.unidade} disabled className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+                  <input 
+                    type="text" 
+                    required 
+                    value={formData.unidade} 
+                    readOnly
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-700" 
+                  />
                   <BuildingOfficeIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 </div>
                 <p className="text-xs text-green-600 mt-1">✓ Unidade vinculada ao seu cadastro</p>
@@ -567,24 +653,37 @@ export default function PedidosMateriais() {
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-md font-semibold text-gray-800 mb-3">Adicionar Produtos</h3>
                 
-                <select
-                  value={selectedProduto?.id || ''}
-                  onChange={(e) => {
-                    const produto = produtos.find(p => p.id === e.target.value);
-                    setSelectedProduto(produto);
-                    setQuantidadeProduto(1);
-                  }}
-                  className="w-full px-3 py-2 border rounded-lg bg-white mb-3"
-                >
-                  <option value="">-- Selecione um produto --</option>
-                  {produtos.map(p => (
-                    <option key={p.id} value={p.id}>{p.nome} {p.marca && `- ${p.marca}`}</option>
-                  ))}
-                </select>
+                <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                  <select
+                    value={selectedProduto?.id || ''}
+                    onChange={(e) => {
+                      const produto = produtos.find(p => p.id === e.target.value);
+                      setSelectedProduto(produto);
+                    }}
+                    className="flex-1 px-3 py-2 border rounded-lg bg-white"
+                  >
+                    <option value="">-- Selecione um produto --</option>
+                    {produtos.map(p => (
+                      <option key={p.id} value={p.id}>{p.nome} {p.marca && `- ${p.marca}`}</option>
+                    ))}
+                  </select>
 
-                <div className="flex gap-2 mb-3">
-                  <input type="number" min="1" value={quantidadeProduto} onChange={(e) => setQuantidadeProduto(Number(e.target.value))} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Quantidade" />
-                  <button type="button" onClick={adicionarItem} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Adicionar</button>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={quantidadeProduto} 
+                    onChange={(e) => setQuantidadeProduto(Number(e.target.value))} 
+                    className="w-24 px-3 py-2 border rounded-lg" 
+                    placeholder="Qtd" 
+                  />
+                  
+                  <button 
+                    type="button" 
+                    onClick={adicionarItem} 
+                    className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                  >
+                    + Adicionar
+                  </button>
                 </div>
 
                 {formData.itens.length > 0 && (
@@ -608,7 +707,7 @@ export default function PedidosMateriais() {
                                 </td>
                                 <td className="px-3 py-2 text-center font-medium">{item.quantidade}</td>
                                 <td className="px-3 py-2 text-center">
-                                  <button type="button" onClick={() => removerItem(index)} className="text-red-500">
+                                  <button type="button" onClick={() => removerItem(index)} className="text-red-500 hover:text-red-700">
                                     <TrashIcon className="w-4 h-4" />
                                   </button>
                                 </td>
@@ -630,13 +729,23 @@ export default function PedidosMateriais() {
 
               {/* Observações */}
               <div>
-                <label className="block text-sm font-medium mb-1">Observações</label>
-                <textarea rows="2" value={formData.observacoes} onChange={(e) => setFormData({...formData, observacoes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Informações adicionais sobre o pedido..." />
+                <label className="block text-sm font-medium mb-1">Observações (opcional)</label>
+                <textarea 
+                  rows="2" 
+                  value={formData.observacoes} 
+                  onChange={(e) => setFormData({...formData, observacoes: e.target.value})} 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  placeholder="Informações adicionais sobre o pedido..."
+                />
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">{editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition">
+                  Cancelar
+                </button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                  {editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}
+                </button>
               </div>
             </form>
           </div>
@@ -649,7 +758,7 @@ export default function PedidosMateriais() {
           <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
               <h2 className="text-xl font-bold">Detalhes do Pedido</h2>
-              <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400">
+              <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400 hover:text-gray-600">
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
@@ -660,12 +769,12 @@ export default function PedidosMateriais() {
                   <p className="text-sm text-gray-500">Status</p>
                   <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${getStatusColor(selectedPedido.status)}`}>
                     {getStatusIcon(selectedPedido.status)}
-                    {selectedPedido.status}
+                    {getStatusText(selectedPedido.status)}
                   </span>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Tipo</p>
-                  <p>{selectedPedido.tipo === 'mensal' ? 'Pedido Mensal' : 'Pedido Avulso'}</p>
+                  <p>{selectedPedido.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Unidade</p>
