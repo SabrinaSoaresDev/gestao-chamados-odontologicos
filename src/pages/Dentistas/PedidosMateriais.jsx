@@ -151,10 +151,6 @@ export default function PedidosMateriais() {
       toast.success(`${selectedProduto.nome} adicionado!`);
     }
     setQuantidadeProduto(1);
-    setSelectedProduto(null);
-    // Resetar o select
-    const selectElement = document.getElementById('produto-select');
-    if (selectElement) selectElement.value = '';
   };
 
   const removerItem = (index) => {
@@ -368,7 +364,7 @@ export default function PedidosMateriais() {
             resetForm();
             setShowModal(true);
           }}
-          className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm sm:text-base w-full sm:w-auto justify-center"
+          className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm sm:text-base"
         >
           <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5" />
           Novo Pedido
@@ -378,10 +374,10 @@ export default function PedidosMateriais() {
       {/* Aviso de Pedido Mensal */}
       {!podeFazerPedidoMensal && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <div className="flex items-start gap-2">
-            <CalendarIcon className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+          <div className="flex items-center gap-2">
+            <CalendarIcon className="w-5 h-5 text-yellow-600" />
             <p className="text-yellow-800 text-sm">
-              <strong>📅 Hoje é dia {diaAtual}.</strong> O período para pedidos mensais é entre os dias <strong>20 e 30</strong>.
+              📅 Hoje é dia {diaAtual}. O período para pedidos mensais é entre os dias <strong>20 e 30</strong>.
               Enquanto isso, você pode fazer pedidos avulsos normalmente.
             </p>
           </div>
@@ -400,30 +396,30 @@ export default function PedidosMateriais() {
       )}
 
       {/* Cards de Estatísticas */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-        <div className="bg-white rounded-lg p-3 shadow-sm border">
-          <p className="text-xs text-gray-500">Total</p>
-          <p className="text-xl font-bold">{stats.total}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
+        <div className="bg-white rounded-lg p-3 sm:p-4 border">
+          <p className="text-xs sm:text-sm text-gray-500">Total</p>
+          <p className="text-xl sm:text-2xl font-bold">{stats.total}</p>
         </div>
-        <div className="bg-yellow-50 rounded-lg p-3 shadow-sm border border-yellow-200">
-          <p className="text-xs text-yellow-600">Pendentes</p>
-          <p className="text-xl font-bold text-yellow-700">{stats.pendentes}</p>
+        <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 border border-yellow-200">
+          <p className="text-xs sm:text-sm text-yellow-600">Pendentes</p>
+          <p className="text-xl sm:text-2xl font-bold text-yellow-700">{stats.pendentes}</p>
         </div>
-        <div className="bg-blue-50 rounded-lg p-3 shadow-sm border border-blue-200">
-          <p className="text-xs text-blue-600">Aprovados</p>
-          <p className="text-xl font-bold text-blue-700">{stats.aprovados}</p>
+        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200">
+          <p className="text-xs sm:text-sm text-blue-600">Aprovados</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-700">{stats.aprovados}</p>
         </div>
-        <div className="bg-purple-50 rounded-lg p-3 shadow-sm border border-purple-200">
-          <p className="text-xs text-purple-600">Em Separação</p>
-          <p className="text-xl font-bold text-purple-700">{stats.separacao}</p>
+        <div className="bg-purple-50 rounded-lg p-3 sm:p-4 border border-purple-200">
+          <p className="text-xs sm:text-sm text-purple-600">Em Separação</p>
+          <p className="text-xl sm:text-2xl font-bold text-purple-700">{stats.separacao}</p>
         </div>
-        <div className="bg-green-50 rounded-lg p-3 shadow-sm border border-green-200">
-          <p className="text-xs text-green-600">Entregues</p>
-          <p className="text-xl font-bold text-green-700">{stats.entregues}</p>
+        <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200">
+          <p className="text-xs sm:text-sm text-green-600">Entregues</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-700">{stats.entregues}</p>
         </div>
-        <div className="bg-red-50 rounded-lg p-3 shadow-sm border border-red-200">
-          <p className="text-xs text-red-600">Cancelados</p>
-          <p className="text-xl font-bold text-red-700">{stats.cancelados}</p>
+        <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200">
+          <p className="text-xs sm:text-sm text-red-600">Cancelados</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-700">{stats.cancelados}</p>
         </div>
       </div>
 
@@ -493,8 +489,8 @@ export default function PedidosMateriais() {
                         </>
                       )}
                     </div>
-                  </td>
-                </tr>
+                   </td>
+                 </tr>
               ))}
               {pedidos.length === 0 && (
                 <tr>
@@ -509,7 +505,7 @@ export default function PedidosMateriais() {
       </div>
 
       {/* CARDS - Mobile */}
-      <div className="md:hidden space-y-3">
+      <div className="md:hidden space-y-4">
         {pedidos.length > 0 ? (
           pedidos.map((pedido) => (
             <div key={pedido.id} className="bg-white rounded-lg shadow-sm border p-4">
@@ -571,32 +567,14 @@ export default function PedidosMateriais() {
               <div className="mt-3 pt-3 border-t">
                 <p className="text-xs text-gray-500 mb-2">Produtos:</p>
                 <div className="space-y-1">
-                  {pedido.itens.slice(0, 3).map((item, idx) => (
+                  {pedido.itens.slice(0, 2).map((item, idx) => (
                     <div key={idx} className="text-xs flex justify-between">
                       <span className="text-gray-600">{item.produtoNome}</span>
                       <span className="font-medium">{item.quantidade} unid.</span>
                     </div>
                   ))}
-                  {pedido.itens.length > 3 && (
-                    <p className="text-xs text-gray-400">+ {pedido.itens.length - 3} outro(s)</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-3 pt-3 border-t">
-                <p className="text-xs text-gray-500 mb-1">Entrega:</p>
-                <div className="text-xs">
-                  {pedido.itens.slice(0, 3).map((item, idx) => {
-                    const entregue = item.quantidadeEntregue || 0;
-                    return (
-                      <div key={idx} className="flex justify-between text-gray-600">
-                        <span>{item.produtoNome}</span>
-                        <span>{entregue}/{item.quantidade}</span>
-                      </div>
-                    );
-                  })}
-                  {pedido.itens.length > 3 && (
-                    <p className="text-xs text-gray-400">+ {pedido.itens.length - 3} outro(s)</p>
+                  {pedido.itens.length > 2 && (
+                    <p className="text-xs text-gray-400">+ {pedido.itens.length - 2} outro(s)</p>
                   )}
                 </div>
               </div>
@@ -616,7 +594,7 @@ export default function PedidosMateriais() {
         )}
       </div>
 
-      {/* Modal de Novo/Editar Pedido - CORRIGIDO */}
+      {/* Modal de Novo/Editar Pedido - VERSÃO ORIGINAL CORRIGIDA */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -628,25 +606,20 @@ export default function PedidosMateriais() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              {/* Tipo de Pedido */}
+              {/* Tipo de Pedido - VERSÃO ORIGINAL */}
               <div>
-                <label className="block text-sm font-medium mb-2">Tipo de Pedido *</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-3 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                <label className="block text-sm font-medium mb-1">Tipo de Pedido</label>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2">
                     <input 
                       type="radio" 
                       value="avulso" 
                       checked={formData.tipo === 'avulso'} 
                       onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
-                      className="w-4 h-4"
                     />
-                    <div>
-                      <span className="font-medium">📦 Avulso</span>
-                      <p className="text-xs text-gray-500">Permitido qualquer dia do mês</p>
-                    </div>
+                    Avulso
                   </label>
-                  
-                  <label className={`flex items-center gap-3 p-2 rounded-lg border ${!podeFazerPedidoMensal && !editingPedido ? 'bg-gray-50 border-gray-200 opacity-60' : 'hover:bg-gray-50 cursor-pointer border-gray-200'}`}>
+                  <label className="flex items-center gap-2">
                     <input 
                       type="radio" 
                       value="mensal" 
@@ -658,29 +631,15 @@ export default function PedidosMateriais() {
                         }
                         setFormData({...formData, tipo: e.target.value});
                       }} 
-                      className="w-4 h-4"
-                      disabled={!podeFazerPedidoMensal && !editingPedido}
                     />
-                    <div>
-                      <span className="font-medium">📅 Mensal</span>
-                      <p className="text-xs text-gray-500">Disponível apenas entre os dias 20 e 30 de cada mês</p>
-                    </div>
+                    Mensal {!podeFazerPedidoMensal && '(disponível dias 20-30)'}
                   </label>
                 </div>
-                
-                {!podeFazerPedidoMensal && !editingPedido && (
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-xs text-yellow-700">
-                      📅 Hoje é dia {diaAtual}. O período para pedidos mensais é entre os dias <strong>20 e 30</strong>.
-                      Enquanto isso, você pode fazer pedidos avulsos normalmente.
-                    </p>
-                  </div>
-                )}
               </div>
 
               {/* Unidade */}
               <div>
-                <label className="block text-sm font-medium mb-2">Unidade *</label>
+                <label className="block text-sm font-medium mb-1">Unidade *</label>
                 <div className="relative">
                   <input 
                     type="text" 
@@ -694,19 +653,18 @@ export default function PedidosMateriais() {
                 <p className="text-xs text-green-600 mt-1">✓ Unidade vinculada ao seu cadastro</p>
               </div>
 
-              {/* Produtos */}
+              {/* Produtos - VERSÃO ORIGINAL QUE FUNCIONAVA */}
               <div className="border-t border-gray-200 pt-4">
                 <h3 className="text-md font-semibold text-gray-800 mb-3">Adicionar Produtos</h3>
                 
                 <div className="flex flex-col sm:flex-row gap-2 mb-3">
                   <select
-                    id="produto-select"
                     value={selectedProduto?.id || ''}
                     onChange={(e) => {
                       const produto = produtos.find(p => p.id === e.target.value);
                       setSelectedProduto(produto);
                     }}
-                    className="flex-1 px-3 py-2 border rounded-lg bg-white text-sm"
+                    className="flex-1 px-3 py-2 border rounded-lg bg-white"
                   >
                     <option value="">-- Selecione um produto --</option>
                     {produtos.map(p => (
@@ -714,24 +672,22 @@ export default function PedidosMateriais() {
                     ))}
                   </select>
 
-                  <div className="flex gap-2">
-                    <input 
-                      type="number" 
-                      min="1" 
-                      value={quantidadeProduto} 
-                      onChange={(e) => setQuantidadeProduto(Number(e.target.value))} 
-                      className="w-24 px-3 py-2 border rounded-lg text-center" 
-                      placeholder="Qtd" 
-                    />
-                    
-                    <button 
-                      type="button" 
-                      onClick={adicionarItem} 
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition whitespace-nowrap"
-                    >
-                      + Adicionar
-                    </button>
-                  </div>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={quantidadeProduto} 
+                    onChange={(e) => setQuantidadeProduto(Number(e.target.value))} 
+                    className="w-24 px-3 py-2 border rounded-lg text-center" 
+                    placeholder="Qtd" 
+                  />
+                  
+                  <button 
+                    type="button" 
+                    onClick={adicionarItem} 
+                    className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition whitespace-nowrap"
+                  >
+                    + Adicionar
+                  </button>
                 </div>
 
                 {formData.itens.length > 0 && (
@@ -778,7 +734,7 @@ export default function PedidosMateriais() {
 
               {/* Observações */}
               <div>
-                <label className="block text-sm font-medium mb-2">Observações (opcional)</label>
+                <label className="block text-sm font-medium mb-1">Observações</label>
                 <textarea 
                   rows="3" 
                   value={formData.observacoes} 
@@ -788,7 +744,7 @@ export default function PedidosMateriais() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white py-3">
+              <div className="flex justify-end gap-3 pt-4 border-t">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition">
                   Cancelar
                 </button>
@@ -818,12 +774,12 @@ export default function PedidosMateriais() {
                   <p className="text-sm text-gray-500">Status</p>
                   <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${getStatusColor(selectedPedido.status)}`}>
                     {getStatusIcon(selectedPedido.status)}
-                    {getStatusText(selectedPedido.status)}
+                    {selectedPedido.status}
                   </span>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Tipo</p>
-                  <p>{selectedPedido.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}</p>
+                  <p>{selectedPedido.tipo === 'mensal' ? 'Pedido Mensal' : 'Pedido Avulso'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Unidade</p>
@@ -854,9 +810,7 @@ export default function PedidosMateriais() {
                           const status = entregue === 0 ? '⏳ Pendente' : entregue === item.quantidade ? '✅ Completo' : '⚠️ Parcial';
                           return (
                             <tr key={index} className="border-t">
-                              <td className="px-3 py-2">
-                                {item.produtoNome} {item.marca && `(${item.marca})`}
-                              </td>
+                              <td className="px-3 py-2">{item.produtoNome} {item.marca && `(${item.marca})`}</td>
                               <td className="px-3 py-2 text-center">{item.quantidade}</td>
                               <td className="px-3 py-2 text-center">{entregue}</td>
                               <td className="px-3 py-2 text-center">
