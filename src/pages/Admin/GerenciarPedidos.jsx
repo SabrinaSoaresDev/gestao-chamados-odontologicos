@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../../services/firebase';
 import { 
   collection, 
@@ -27,7 +27,8 @@ import {
   ChatBubbleLeftIcon,
   CalendarIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
@@ -46,6 +47,12 @@ export default function GerenciarPedidos() {
   const [unidades, setUnidades] = useState([]);
   const [novaObservacao, setNovaObservacao] = useState('');
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [assinatura, setAssinatura] = useState('');
+  const [nomeRecebedor, setNomeRecebedor] = useState('');
+  const [dataRecebimento, setDataRecebimento] = useState('');
+  
+  // Referência para impressão
+  const printRef = useRef();
   
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -88,16 +95,15 @@ export default function GerenciarPedidos() {
       filtered = filtered.filter(p => p.unidade === filtroUnidade);
     }
     setFilteredPedidos(filtered);
-    setCurrentPage(1); // Reset para primeira página ao filtrar
+    setCurrentPage(1);
   }, [searchTerm, filtroStatus, filtroUnidade, pedidos]);
 
-  // Paginação - calcular índices
+  // Paginação
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredPedidos.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredPedidos.length / itemsPerPage);
 
-  // Funções de paginação
   const goToNextPage = () => {
     if (currentPage < totalPages) {
       setCurrentPage(currentPage + 1);
@@ -136,13 +142,40 @@ export default function GerenciarPedidos() {
       const mensagens = {
         aprovado: 'Pedido aprovado com sucesso!',
         entregue: 'Pedido marcado como entregue!',
-        cancelado: 'Pedido cancelado!'
+        cancelado: 'Pedido cancelado!',
+        separacao: 'Pedido em separação!'
       };
       
       toast.success(mensagens[novoStatus] || 'Status atualizado!');
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       toast.error('Erro ao atualizar status');
+    }
+  };
+
+  // Reverter pedido entregue para aprovado
+  const handleReverterEntrega = async (pedidoId) => {
+    if (!window.confirm('⚠️ Deseja reverter o status do pedido de "Entregue" para "Aprovado"? Isso permitirá editar as quantidades novamente.')) return;
+    
+    try {
+      const pedido = pedidos.find(p => p.id === pedidoId);
+      await updateDoc(doc(db, 'pedidos', pedidoId), {
+        status: 'aprovado',
+        dataEntrega: null,
+        historico: [
+          ...(pedido?.historico || []),
+          { 
+            data: new Date(), 
+            acao: 'Pedido revertido de Entregue para Aprovado',
+            usuario: 'Admin',
+            tipo: 'reversao'
+          }
+        ]
+      });
+      toast.success('Pedido revertido para aprovado!');
+    } catch (error) {
+      console.error('Erro ao reverter entrega:', error);
+      toast.error('Erro ao reverter entrega');
     }
   };
 
@@ -178,7 +211,7 @@ export default function GerenciarPedidos() {
     }
   };
 
-  // Atualizar quantidade entregue
+  // Atualizar quantidade entregue e mudar status para "em separação"
   const handleAtualizarQuantidadeEntregue = async (pedidoId, itemIndex, quantidade) => {
     const pedido = pedidos.find(p => p.id === pedidoId);
     const novosItens = [...pedido.itens];
@@ -188,23 +221,24 @@ export default function GerenciarPedidos() {
     try {
       await updateDoc(doc(db, 'pedidos', pedidoId), {
         itens: novosItens,
+        ...(pedido.status === 'aprovado' && { status: 'separacao' }),
         historico: [
           ...(pedido.historico || []),
           { 
             data: new Date(), 
-            acao: `Quantidade do item "${novosItens[itemIndex].produtoNome}" alterada de ${quantidadeAnterior} para ${quantidade}`,
+            acao: `Quantidade do item "${novosItens[itemIndex].produtoNome}" alterada de ${quantidadeAnterior} para ${quantidade}${pedido.status === 'aprovado' ? ' - Status alterado para EM SEPARAÇÃO' : ''}`,
             usuario: 'Admin',
             tipo: 'quantidade'
           }
         ]
       });
-      toast.success('Quantidade atualizada!');
+      toast.success(pedido.status === 'aprovado' ? 'Quantidade atualizada! Status alterado para "Em Separação"' : 'Quantidade atualizada!');
     } catch (error) {
       toast.error('Erro ao atualizar quantidade');
     }
   };
 
-  // Atualizar múltiplas quantidades
+  // Atualizar múltiplas quantidades e mudar status para "em separação"
   const handleAtualizarMultiplasQuantidades = async () => {
     if (!selectedPedido) return;
     
@@ -230,19 +264,20 @@ export default function GerenciarPedidos() {
     try {
       await updateDoc(doc(db, 'pedidos', selectedPedido.id), {
         itens: novosItens,
+        ...(pedido.status === 'aprovado' && { status: 'separacao' }),
         historico: [
           ...(pedido.historico || []),
           { 
             data: new Date(), 
-            acao: `Quantidades atualizadas: ${alteracoes.join('; ')}`,
+            acao: `Quantidades atualizadas: ${alteracoes.join('; ')}${pedido.status === 'aprovado' ? ' - Status alterado para EM SEPARAÇÃO' : ''}`,
             usuario: 'Admin',
             tipo: 'quantidade'
           }
         ]
       });
-      toast.success('Quantidades atualizadas!');
+      toast.success(pedido.status === 'aprovado' ? 'Quantidades atualizadas! Status alterado para "Em Separação"' : 'Quantidades atualizadas!');
       setEditandoItens(false);
-      setSelectedPedido({ ...selectedPedido, itens: novosItens });
+      setSelectedPedido({ ...selectedPedido, itens: novosItens, status: pedido.status === 'aprovado' ? 'separacao' : pedido.status });
     } catch (error) {
       toast.error('Erro ao atualizar');
     }
@@ -284,6 +319,207 @@ export default function GerenciarPedidos() {
     }
   };
 
+  // Função de impressão
+  const handleImprimir = () => {
+    setDataRecebimento(new Date().toLocaleDateString('pt-BR'));
+    setTimeout(() => {
+      const printContent = printRef.current;
+      const originalTitle = document.title;
+      document.title = `Pedido_${selectedPedido.id?.slice(-6)}`;
+      
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Pedido ${selectedPedido.id?.slice(-6)}</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              padding: 40px;
+              background: white;
+              color: #1a1a1a;
+            }
+            .print-container {
+              max-width: 900px;
+              margin: 0 auto;
+              background: white;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              padding-bottom: 20px;
+              border-bottom: 3px solid #2563eb;
+            }
+            .logo {
+              font-size: 28px;
+              font-weight: bold;
+              color: #1e3a8a;
+              margin-bottom: 8px;
+            }
+            .logo span {
+              color: #2563eb;
+            }
+            .subtitle {
+              color: #6b7280;
+              font-size: 12px;
+            }
+            .title {
+              font-size: 20px;
+              font-weight: bold;
+              color: #1f2937;
+              margin-top: 15px;
+            }
+            .info-section {
+              background: #f3f4f6;
+              padding: 20px;
+              border-radius: 12px;
+              margin-bottom: 25px;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 15px;
+            }
+            .info-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .info-label {
+              font-size: 11px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #6b7280;
+              margin-bottom: 4px;
+            }
+            .info-value {
+              font-size: 14px;
+              font-weight: 500;
+              color: #1f2937;
+            }
+            .items-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 25px;
+            }
+            .items-table th {
+              background: #f9fafb;
+              padding: 12px;
+              text-align: left;
+              font-size: 12px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #6b7280;
+              border-bottom: 2px solid #e5e7eb;
+            }
+            .items-table td {
+              padding: 10px 12px;
+              border-bottom: 1px solid #e5e7eb;
+              font-size: 13px;
+            }
+            .items-table tr:last-child td {
+              border-bottom: none;
+            }
+            .status-badge {
+              display: inline-block;
+              padding: 4px 8px;
+              border-radius: 6px;
+              font-size: 11px;
+              font-weight: 600;
+            }
+            .status-entregue {
+              background: #dcfce7;
+              color: #166534;
+            }
+            .observacoes {
+              background: #fffbeb;
+              padding: 15px;
+              border-left: 4px solid #f59e0b;
+              border-radius: 8px;
+              margin-bottom: 25px;
+            }
+            .observacoes-label {
+              font-size: 12px;
+              font-weight: 600;
+              color: #92400e;
+              margin-bottom: 6px;
+            }
+            .assinatura-section {
+              margin-top: 40px;
+              padding-top: 30px;
+              border-top: 2px dashed #d1d5db;
+            }
+            .assinatura-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 30px;
+              margin-top: 20px;
+            }
+            .assinatura-box {
+              text-align: center;
+            }
+            .assinatura-linha {
+              margin-top: 40px;
+              border-top: 1px solid #9ca3af;
+              width: 80%;
+              margin-left: auto;
+              margin-right: auto;
+            }
+            .assinatura-texto {
+              font-size: 11px;
+              color: #6b7280;
+              margin-top: 8px;
+            }
+            .data-recebimento {
+              font-size: 12px;
+              color: #4b5563;
+              margin-top: 20px;
+              text-align: right;
+              font-style: italic;
+            }
+            .footer {
+              margin-top: 40px;
+              text-align: center;
+              font-size: 10px;
+              color: #9ca3af;
+              border-top: 1px solid #e5e7eb;
+              padding-top: 20px;
+            }
+            @media print {
+              body {
+                padding: 20px;
+              }
+              .no-print {
+                display: none;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">
+            ${printContent.current ? printContent.current.innerHTML : ''}
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      document.title = originalTitle;
+    }, 100);
+  };
+
   // Exportar CSV
   const exportToCSV = () => {
     const headers = ['ID', 'Solicitante', 'Unidade', 'Tipo', 'Status', 'Itens', 'Data Pedido', 'Data Entrega'];
@@ -312,6 +548,7 @@ export default function GerenciarPedidos() {
     switch(status) {
       case 'pendente': return 'bg-yellow-100 text-yellow-800';
       case 'aprovado': return 'bg-blue-100 text-blue-800';
+      case 'separacao': return 'bg-purple-100 text-purple-800';
       case 'entregue': return 'bg-green-100 text-green-800';
       case 'cancelado': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100';
@@ -322,6 +559,7 @@ export default function GerenciarPedidos() {
     switch(status) {
       case 'pendente': return <ClockIcon className="w-4 h-4" />;
       case 'aprovado': return <CheckCircleIcon className="w-4 h-4" />;
+      case 'separacao': return <PencilIcon className="w-4 h-4" />;
       case 'entregue': return <TruckIcon className="w-4 h-4" />;
       case 'cancelado': return <XCircleIcon className="w-4 h-4" />;
       default: return null;
@@ -332,6 +570,7 @@ export default function GerenciarPedidos() {
     switch(status) {
       case 'pendente': return 'Pendente';
       case 'aprovado': return 'Aprovado';
+      case 'separacao': return 'Em Separação';
       case 'entregue': return 'Entregue';
       case 'cancelado': return 'Cancelado';
       default: return status;
@@ -360,6 +599,7 @@ export default function GerenciarPedidos() {
       case 'quantidade': return <PencilIcon className="w-4 h-4 text-green-500" />;
       case 'observacao': return <ChatBubbleLeftIcon className="w-4 h-4 text-purple-500" />;
       case 'reabertura': return <ArrowPathIcon className="w-4 h-4 text-orange-500" />;
+      case 'reversao': return <ArrowPathIcon className="w-4 h-4 text-red-500" />;
       default: return <ClockIcon className="w-4 h-4 text-gray-500" />;
     }
   };
@@ -368,6 +608,7 @@ export default function GerenciarPedidos() {
     total: pedidos.length,
     pendentes: pedidos.filter(p => p.status === 'pendente').length,
     aprovados: pedidos.filter(p => p.status === 'aprovado').length,
+    separacao: pedidos.filter(p => p.status === 'separacao').length,
     entregues: pedidos.filter(p => p.status === 'entregue').length,
     cancelados: pedidos.filter(p => p.status === 'cancelado').length
   };
@@ -382,6 +623,108 @@ export default function GerenciarPedidos() {
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-6">
+      {/* Componente de impressão oculto */}
+      <div ref={printRef} style={{ display: 'none' }}>
+        <div className="print-container">
+          <div className="header">
+            <div className="logo">
+              🦷 ORTO<span>DONSIST</span>
+            </div>
+            <div className="subtitle">Materiais Odontológicos</div>
+            <div className="title">COMPROVANTE DE PEDIDO</div>
+          </div>
+
+          <div className="info-section">
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="info-label">Nº DO PEDIDO</span>
+                <span className="info-value">#{selectedPedido?.id?.slice(-8)}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">DATA DO PEDIDO</span>
+                <span className="info-value">{formatDateTime(selectedPedido?.dataPedido)}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">SOLICITANTE</span>
+                <span className="info-value">{selectedPedido?.dentistaNome}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">UNIDADE</span>
+                <span className="info-value">{selectedPedido?.unidade}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">TIPO</span>
+                <span className="info-value">{selectedPedido?.tipo === 'mensal' ? '📅 Pedido Mensal' : '📦 Pedido Avulso'}</span>
+              </div>
+              <div className="info-item">
+                <span className="info-label">STATUS</span>
+                <span className="info-value">
+                  <span className={`status-badge ${selectedPedido?.status === 'entregue' ? 'status-entregue' : ''}`}>
+                    {getStatusText(selectedPedido?.status)}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <table className="items-table">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Marca</th>
+                <th>Solicitado</th>
+                <th>Entregue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedPedido?.itens.map((item, index) => (
+                <tr key={index}>
+                  <td><strong>{item.produtoNome}</strong></td>
+                  <td>{item.marca || '-'}</td>
+                  <td>{item.quantidade}</td>
+                  <td>{item.quantidadeEntregue || 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {selectedPedido?.observacoes && (
+            <div className="observacoes">
+              <div className="observacoes-label">📝 OBSERVAÇÕES DO SOLICITANTE</div>
+              <div style={{ fontSize: '13px', color: '#78350f' }}>{selectedPedido.observacoes}</div>
+            </div>
+          )}
+
+          {selectedPedido?.observacoesAdmin && (
+            <div className="observacoes" style={{ background: '#f0fdf4', borderLeftColor: '#22c55e' }}>
+              <div className="observacoes-label" style={{ color: '#166534' }}>📋 OBSERVAÇÕES DO ADMINISTRADOR</div>
+              <div style={{ fontSize: '13px', color: '#14532d' }}>{selectedPedido.observacoesAdmin}</div>
+            </div>
+          )}
+
+          <div className="assinatura-section">
+            <div className="assinatura-grid">
+              <div className="assinatura-box">
+                <div className="assinatura-linha"></div>
+                <div className="assinatura-texto">Assinatura de quem recebeu</div>
+              </div>
+              <div className="assinatura-box">
+                <div className="assinatura-linha"></div>
+                <div className="assinatura-texto">Carimbo / Identificação</div>
+              </div>
+            </div>
+            <div className="data-recebimento">
+              Data de recebimento: {dataRecebimento}
+            </div>
+          </div>
+
+          <div className="footer">
+            <div>Ortodonsist - Materiais Odontológicos</div>
+            <div style={{ fontSize: '9px', marginTop: '5px' }}>Este documento é um comprovante válido do pedido realizado</div>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
@@ -394,8 +737,8 @@ export default function GerenciarPedidos() {
         </button>
       </div>
 
-      {/* Cards - Responsivo */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-4">
+      {/* Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
         <div className="bg-white rounded-lg p-3 sm:p-4 border">
           <p className="text-xs sm:text-sm text-gray-500">Total</p>
           <p className="text-xl sm:text-2xl font-bold">{stats.total}</p>
@@ -408,6 +751,10 @@ export default function GerenciarPedidos() {
           <p className="text-xs sm:text-sm text-blue-600">Aprovados</p>
           <p className="text-xl sm:text-2xl font-bold text-blue-700">{stats.aprovados}</p>
         </div>
+        <div className="bg-purple-50 rounded-lg p-3 sm:p-4 border border-purple-200">
+          <p className="text-xs sm:text-sm text-purple-600">Em Separação</p>
+          <p className="text-xl sm:text-2xl font-bold text-purple-700">{stats.separacao}</p>
+        </div>
         <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200">
           <p className="text-xs sm:text-sm text-green-600">Entregues</p>
           <p className="text-xl sm:text-2xl font-bold text-green-700">{stats.entregues}</p>
@@ -418,7 +765,7 @@ export default function GerenciarPedidos() {
         </div>
       </div>
 
-      {/* Filtros - Versão Responsiva */}
+      {/* Filtros */}
       <div className="bg-white rounded-lg shadow p-3 sm:p-4">
         <div className="relative mb-3">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
@@ -450,6 +797,7 @@ export default function GerenciarPedidos() {
             <option value="todos">📋 Todos os status</option>
             <option value="pendente">🟡 Pendentes</option>
             <option value="aprovado">🔵 Aprovados</option>
+            <option value="separacao">🟣 Em Separação</option>
             <option value="entregue">🟢 Entregues</option>
             <option value="cancelado">🔴 Cancelados</option>
           </select>
@@ -465,7 +813,7 @@ export default function GerenciarPedidos() {
         </div>
       </div>
 
-      {/* TABELA - Desktop com Paginação */}
+      {/* TABELA - Desktop */}
       <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -526,6 +874,11 @@ export default function GerenciarPedidos() {
                           <TruckIcon className="w-5 h-5" />
                         </button>
                       )}
+                      {pedido.status === 'entregue' && (
+                        <button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600 hover:text-orange-800" title="Reverter entrega">
+                          <ArrowPathIcon className="w-5 h-5" />
+                        </button>
+                      )}
                       {pedido.status === 'cancelado' && (
                         <button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600 hover:text-orange-800" title="Reabrir">
                           <ArrowPathIcon className="w-5 h-5" />
@@ -535,14 +888,14 @@ export default function GerenciarPedidos() {
                         <TrashIcon className="w-5 h-5" />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                   </td>
+                 </tr>
               ))}
               {filteredPedidos.length === 0 && (
                 <tr>
                   <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
                     Nenhum pedido encontrado
-                  </td>
+                   </td>
                 </tr>
               )}
             </tbody>
@@ -550,11 +903,10 @@ export default function GerenciarPedidos() {
         </div>
       </div>
 
-      {/* CARDS - Mobile com Paginação */}
+      {/* CARDS - Mobile */}
       <div className="md:hidden space-y-4">
         {currentItems.map((pedido) => (
           <div key={pedido.id} className="bg-white rounded-lg shadow-sm border p-4">
-            {/* Header do Card */}
             <div className="flex justify-between items-start mb-3">
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -598,6 +950,11 @@ export default function GerenciarPedidos() {
                     <TruckIcon className="w-5 h-5" />
                   </button>
                 )}
+                {pedido.status === 'entregue' && (
+                  <button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600" title="Reverter entrega">
+                    <ArrowPathIcon className="w-5 h-5" />
+                  </button>
+                )}
                 {pedido.status === 'cancelado' && (
                   <button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600" title="Reabrir">
                     <ArrowPathIcon className="w-5 h-5" />
@@ -609,15 +966,10 @@ export default function GerenciarPedidos() {
               </div>
             </div>
 
-            {/* Informações do Card */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <BuildingOfficeIcon className="w-4 h-4" />
                 {pedido.unidade}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <UserIcon className="w-4 h-4" />
-                {pedido.dentistaNome}
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <ShoppingCartIcon className="w-4 h-4" />
@@ -635,7 +987,6 @@ export default function GerenciarPedidos() {
               )}
             </div>
 
-            {/* Lista rápida de produtos */}
             <div className="mt-3 pt-3 border-t">
               <p className="text-xs text-gray-500 mb-2">Produtos:</p>
               <div className="space-y-1">
@@ -660,7 +1011,7 @@ export default function GerenciarPedidos() {
         )}
       </div>
 
-      {/* Paginação - Desktop e Mobile */}
+      {/* Paginação */}
       {totalPages > 1 && (
         <div className="flex justify-center items-center gap-2 mt-6">
           <button
@@ -676,7 +1027,6 @@ export default function GerenciarPedidos() {
           </button>
           
           <div className="flex gap-1">
-            {/* Páginas - Desktop */}
             <div className="hidden sm:flex gap-1">
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                 let pageNum;
@@ -706,7 +1056,6 @@ export default function GerenciarPedidos() {
               })}
             </div>
             
-            {/* Páginas - Mobile (simplificado) */}
             <div className="sm:hidden">
               <span className="px-4 py-2 text-sm text-gray-600">
                 Página {currentPage} de {totalPages}
@@ -728,14 +1077,13 @@ export default function GerenciarPedidos() {
         </div>
       )}
 
-      {/* Informação de paginação */}
       {filteredPedidos.length > 0 && (
         <div className="text-center text-sm text-gray-500">
           Mostrando {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, filteredPedidos.length)} de {filteredPedidos.length} pedidos
         </div>
       )}
 
-      {/* Modal de Detalhes (mantido igual) */}
+      {/* Modal de Detalhes */}
       {showDetalhesModal && selectedPedido && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-2 sm:p-4 z-50" onClick={() => setShowDetalhesModal(false)}>
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto mx-2" onClick={(e) => e.stopPropagation()}>
@@ -744,9 +1092,14 @@ export default function GerenciarPedidos() {
                 <h2 className="text-lg sm:text-xl font-bold">Detalhes do Pedido</h2>
                 <p className="text-xs sm:text-sm text-gray-500">#{selectedPedido.id}</p>
               </div>
-              <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-              </button>
+              <div className="flex gap-2">
+                <button onClick={handleImprimir} className="text-gray-600 hover:text-gray-800" title="Imprimir">
+                  <PrinterIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+                <button onClick={() => setShowDetalhesModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+              </div>
             </div>
 
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -786,7 +1139,7 @@ export default function GerenciarPedidos() {
               <div>
                 <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
                   <h3 className="font-semibold text-gray-800">Itens do Pedido</h3>
-                  {selectedPedido.status === 'aprovado' && !editandoItens && (
+                  {(selectedPedido.status === 'aprovado' || selectedPedido.status === 'separacao') && !editandoItens && (
                     <button onClick={() => setEditandoItens(true)} className="text-xs sm:text-sm text-blue-600 hover:text-blue-800">
                       <PencilIcon className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
                       Editar quantidades
@@ -842,12 +1195,12 @@ export default function GerenciarPedidos() {
                                     {entregue}
                                   </span>
                                 )}
-                              </td>
+                               </td>
                               <td className="px-2 sm:px-3 py-2 text-center">
                                 {entregue === 0 && <span className="text-xs text-gray-500">⏳ Pendente</span>}
                                 {entregue > 0 && entregue < item.quantidade && <span className="text-xs text-orange-600">⚠️ Parcial</span>}
                                 {entregue === item.quantidade && <span className="text-xs text-green-600">✅ Completo</span>}
-                              </td>
+                               </td>
                             </tr>
                           );
                         })}
@@ -914,11 +1267,13 @@ export default function GerenciarPedidos() {
                                     item.tipo === 'status' ? 'bg-blue-100 text-blue-700' :
                                     item.tipo === 'quantidade' ? 'bg-green-100 text-green-700' :
                                     item.tipo === 'observacao' ? 'bg-purple-100 text-purple-700' :
+                                    item.tipo === 'reversao' ? 'bg-orange-100 text-orange-700' :
                                     'bg-gray-100 text-gray-700'
                                   }`}>
                                     {item.tipo === 'status' ? 'Status' :
                                      item.tipo === 'quantidade' ? 'Quantidade' :
-                                     item.tipo === 'observacao' ? 'Observação' : 'Atualização'}
+                                     item.tipo === 'observacao' ? 'Observação' :
+                                     item.tipo === 'reversao' ? 'Reversão' : 'Atualização'}
                                   </span>
                                 )}
                               </div>
@@ -960,7 +1315,7 @@ export default function GerenciarPedidos() {
                     </button>
                   </>
                 )}
-                {selectedPedido.status === 'aprovado' && !editandoItens && (
+                {(selectedPedido.status === 'aprovado' || selectedPedido.status === 'separacao') && !editandoItens && (
                   <button
                     onClick={() => {
                       handleAtualizarStatus(selectedPedido.id, 'entregue');
@@ -969,6 +1324,17 @@ export default function GerenciarPedidos() {
                     className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     Marcar como Entregue
+                  </button>
+                )}
+                {selectedPedido.status === 'entregue' && (
+                  <button
+                    onClick={() => {
+                      handleReverterEntrega(selectedPedido.id);
+                      setShowDetalhesModal(false);
+                    }}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm"
+                  >
+                    Reverter Entrega
                   </button>
                 )}
                 <button onClick={() => setShowDetalhesModal(false)} className="px-3 py-1.5 sm:px-4 sm:py-2 border rounded-lg hover:bg-gray-50 text-sm">
