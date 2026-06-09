@@ -26,7 +26,9 @@ import {
   BellAlertIcon,
   BuildingOfficeIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  ArrowUpIcon,
+  ArrowDownIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -39,6 +41,7 @@ export default function Produtos() {
   const [showAlertaModal, setShowAlertaModal] = useState(false);
   const [editingProduto, setEditingProduto] = useState(null);
   const [produtosVencendo, setProdutosVencendo] = useState([]);
+  const [ordenacao, setOrdenacao] = useState({ campo: 'nome', direcao: 'asc' });
   
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,24 +58,19 @@ export default function Produtos() {
     observacoes: ''
   });
 
-  // Buscar produtos com ordenação alfabética
+  // Buscar produtos
   useEffect(() => {
-    const q = query(collection(db, 'produtos'), orderBy('nome', 'asc'));
+    const q = query(collection(db, 'produtos'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const produtosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       
-      // Garantir ordenação alfabética (case-insensitive)
-      produtosData.sort((a, b) => {
-        const nomeA = a.nome?.toLowerCase() || '';
-        const nomeB = b.nome?.toLowerCase() || '';
-        return nomeA.localeCompare(nomeB);
-      });
-      
-      setProdutos(produtosData);
-      setFilteredProdutos(produtosData);
+      // Ordenar produtos
+      const ordenados = ordenarProdutos(produtosData, ordenacao.campo, ordenacao.direcao);
+      setProdutos(ordenados);
+      setFilteredProdutos(ordenados);
       
       // Calcular produtos próximos do vencimento
       const hoje = new Date();
@@ -91,42 +89,66 @@ export default function Produtos() {
     return () => unsubscribe();
   }, []);
 
-  // Filtrar produtos mantendo ordenação alfabética
+  // Função de ordenação
+  const ordenarProdutos = (lista, campo, direcao) => {
+    const sorted = [...lista];
+    sorted.sort((a, b) => {
+      let valorA = a[campo] || '';
+      let valorB = b[campo] || '';
+      
+      if (campo === 'quantidade' || campo === 'preco') {
+        valorA = Number(valorA) || 0;
+        valorB = Number(valorB) || 0;
+      } else if (campo === 'vencimento') {
+        valorA = valorA ? new Date(valorA) : new Date(8640000000000000);
+        valorB = valorB ? new Date(valorB) : new Date(8640000000000000);
+      } else {
+        valorA = String(valorA).toLowerCase();
+        valorB = String(valorB).toLowerCase();
+      }
+      
+      if (valorA < valorB) return direcao === 'asc' ? -1 : 1;
+      if (valorA > valorB) return direcao === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  };
+
+  // Filtrar e ordenar produtos
   useEffect(() => {
-    let filtered = [...produtos]; // Criar cópia do array
+    let filtered = [...produtos];
     if (searchTerm) {
       filtered = filtered.filter(p =>
         p.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.marca?.toLowerCase().includes(searchTerm.toLowerCase())
+        p.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.fornecedor?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    // Manter ordenação alfabética após o filtro
-    filtered.sort((a, b) => {
-      const nomeA = a.nome?.toLowerCase() || '';
-      const nomeB = b.nome?.toLowerCase() || '';
-      return nomeA.localeCompare(nomeB);
-    });
-    setFilteredProdutos(filtered);
-    setCurrentPage(1); // Reset para primeira página ao filtrar
-  }, [searchTerm, produtos]);
+    const ordenados = ordenarProdutos(filtered, ordenacao.campo, ordenacao.direcao);
+    setFilteredProdutos(ordenados);
+    setCurrentPage(1);
+  }, [searchTerm, produtos, ordenacao]);
 
-  // Paginação - calcular índices
+  // Alternar ordenação
+  const toggleOrdenacao = (campo) => {
+    setOrdenacao(prev => ({
+      campo,
+      direcao: prev.campo === campo && prev.direcao === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  // Paginação
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredProdutos.slice(indexOfFirstItem, indexOfLastItem);
   const totalPages = Math.ceil(filteredProdutos.length / itemsPerPage);
 
-  // Funções de paginação
   const goToNextPage = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
-    }
+    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
   const goToPreviousPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    }
+    if (currentPage > 1) setCurrentPage(currentPage - 1);
   };
 
   const goToPage = (page) => {
@@ -221,6 +243,28 @@ export default function Produtos() {
     return { text: `${dias} dias`, color: 'bg-green-100 text-green-800', icon: <CheckCircleIcon className="w-4 h-4" /> };
   };
 
+  // Componente do cabeçalho da tabela com ordenação
+  const TableHeader = ({ campo, label, className = "" }) => {
+    const isActive = ordenacao.campo === campo;
+    return (
+      <th 
+        className={`px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 transition-colors ${className}`}
+        onClick={() => toggleOrdenacao(campo)}
+      >
+        <div className="flex items-center gap-1">
+          {label}
+          {isActive ? (
+            ordenacao.direcao === 'asc' ? 
+              <ArrowUpIcon className="w-3 h-3" /> : 
+              <ArrowDownIcon className="w-3 h-3" />
+          ) : (
+            <div className="w-3 h-3" />
+          )}
+        </div>
+      </th>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-96">
@@ -236,14 +280,15 @@ export default function Produtos() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Produtos</h1>
           <p className="text-sm text-gray-600">Gerencie os produtos do estoque</p>
-          <p className="text-xs text-gray-400 mt-1">✓ Produtos ordenados alfabeticamente</p>
+          <p className="text-xs text-blue-600 mt-1">
+            💡 Clique nos cabeçalhos das colunas para ordenar
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          {/* Botão de Alerta de Vencimento */}
           {produtosVencendo.length > 0 && (
             <button
               onClick={() => setShowAlertaModal(true)}
-              className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm"
+              className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm transition"
             >
               <BellAlertIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">{produtosVencendo.length} produtos vencem em até 90 dias</span>
@@ -255,7 +300,7 @@ export default function Produtos() {
               resetForm();
               setShowModal(true);
             }}
-            className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
           >
             <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5" />
             Novo Produto
@@ -263,27 +308,27 @@ export default function Produtos() {
         </div>
       </div>
 
-      {/* Cards de Estatísticas - Responsivo */}
+      {/* Cards de Estatísticas */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-4">
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Total</p>
-          <p className="text-xl sm:text-2xl font-bold">{produtos.length}</p>
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 sm:p-4 border border-blue-200">
+          <p className="text-xs sm:text-sm text-blue-600">Total</p>
+          <p className="text-xl sm:text-2xl font-bold text-blue-700">{produtos.length}</p>
         </div>
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Estoque Baixo</p>
-          <p className="text-xl sm:text-2xl font-bold text-red-600">
+        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 sm:p-4 border border-red-200">
+          <p className="text-xs sm:text-sm text-red-600">Estoque Baixo</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-700">
             {produtos.filter(p => p.quantidade < 10).length}
           </p>
         </div>
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Vencidos</p>
-          <p className="text-xl sm:text-2xl font-bold text-orange-600">
+        <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 sm:p-4 border border-orange-200">
+          <p className="text-xs sm:text-sm text-orange-600">Vencidos</p>
+          <p className="text-xl sm:text-2xl font-bold text-orange-700">
             {produtos.filter(p => isVencido(p.vencimento)).length}
           </p>
         </div>
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Vencem 30 dias</p>
-          <p className="text-xl sm:text-2xl font-bold text-red-600">
+        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 sm:p-4 border border-red-200">
+          <p className="text-xs sm:text-sm text-red-600">Vencem 30 dias</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-700">
             {produtos.filter(p => {
               if (!p.vencimento) return false;
               const dias = getDiasRestantes(p.vencimento);
@@ -291,9 +336,9 @@ export default function Produtos() {
             }).length}
           </p>
         </div>
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Vencem 30-90 dias</p>
-          <p className="text-xl sm:text-2xl font-bold text-yellow-600">
+        <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 sm:p-4 border border-yellow-200">
+          <p className="text-xs sm:text-sm text-yellow-600">Vencem 30-90 dias</p>
+          <p className="text-xl sm:text-2xl font-bold text-yellow-700">
             {produtos.filter(p => {
               if (!p.vencimento) return false;
               const dias = getDiasRestantes(p.vencimento);
@@ -315,9 +360,9 @@ export default function Produtos() {
           </p>
           <div className="flex flex-wrap gap-2">
             {produtosVencendo.slice(0, 5).map(produto => (
-              <span key={produto.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-full text-xs">
+              <span key={produto.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-full text-xs shadow-sm">
                 {produto.nome}
-                <span className="text-orange-600">
+                <span className="text-orange-600 font-medium">
                   ({getDiasRestantes(produto.vencimento)} dias)
                 </span>
               </span>
@@ -325,7 +370,7 @@ export default function Produtos() {
             {produtosVencendo.length > 5 && (
               <button
                 onClick={() => setShowAlertaModal(true)}
-                className="text-xs text-blue-600 hover:text-blue-800"
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
               >
                 +{produtosVencendo.length - 5} outros
               </button>
@@ -339,49 +384,57 @@ export default function Produtos() {
         <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
         <input
           type="text"
-          placeholder="Buscar produtos..."
+          placeholder="Buscar produtos por nome, marca ou fornecedor..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-9 sm:pl-10 pr-4 py-2 border rounded-lg text-sm sm:text-base"
+          className="w-full pl-9 sm:pl-10 pr-4 py-2 border rounded-lg text-sm sm:text-base focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
 
-      {/* TABELA - Desktop com Paginação e Ordenação Alfabética */}
+      {/* TABELA - Desktop com Ordenação */}
       <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                  Produto 
-                  <span className="ml-1 text-blue-500">⬆️ A-Z</span>
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Marca</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Estoque</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Vencimento</th>
+                <TableHeader campo="nome" label="Produto" className="w-1/4" />
+                <TableHeader campo="marca" label="Marca" className="w-1/6" />
+                <TableHeader campo="quantidade" label="Estoque" className="w-1/12" />
+                <TableHeader campo="vencimento" label="Vencimento" className="w-1/6" />
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Preço</th>
+                <TableHeader campo="preco" label="Preço" className="w-1/12" />
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {currentItems.map((produto) => {
                 const statusVenc = getStatusVencimento(produto.vencimento);
+                const isEstoqueBaixo = produto.quantidade < 10;
+                const isVencidoProd = isVencido(produto.vencimento);
+                
                 return (
-                  <tr key={produto.id} className="hover:bg-gray-50">
+                  <tr key={produto.id} className={`hover:bg-gray-50 transition ${isEstoqueBaixo ? 'bg-red-50/30' : ''} ${isVencidoProd ? 'bg-orange-50/30' : ''}`}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-sm">{produto.nome}</p>
-                      <p className="text-xs text-gray-500">{produto.fornecedor}</p>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isEstoqueBaixo ? 'bg-red-500' : 'bg-green-500'}`} />
+                        <div>
+                          <p className="font-medium text-sm">{produto.nome}</p>
+                          <p className="text-xs text-gray-500">{produto.fornecedor}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm">{produto.marca || '-'}</td>
                     <td className="px-4 py-3">
-                      <span className={`font-medium text-sm ${produto.quantidade < 10 ? 'text-red-600' : 'text-gray-700'}`}>
+                      <span className={`font-medium text-sm ${isEstoqueBaixo ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
                         {produto.quantidade} {produto.unidade}
                       </span>
+                      {isEstoqueBaixo && (
+                        <span className="ml-1 text-xs text-red-500">⚠️</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {produto.vencimento ? (
-                        <span className={isVencido(produto.vencimento) ? 'text-red-600' : 'text-gray-600'}>
+                        <span className={isVencidoProd ? 'text-red-600 font-medium' : 'text-gray-600'}>
                           {new Date(produto.vencimento).toLocaleDateString('pt-BR')}
                         </span>
                       ) : '-'}
@@ -395,15 +448,25 @@ export default function Produtos() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      R$ {(produto.preco || 0).toFixed(2)}
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-medium text-green-600">
+                        R$ {(produto.preco || 0).toFixed(2)}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => handleEdit(produto)} className="text-blue-600 hover:text-blue-800">
+                        <button
+                          onClick={() => handleEdit(produto)}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                          title="Editar"
+                        >
                           <PencilIcon className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(produto.id)} className="text-red-600 hover:text-red-800">
+                        <button
+                          onClick={() => handleDelete(produto.id)}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Excluir"
+                        >
                           <TrashIcon className="w-4 h-4" />
                         </button>
                       </div>
@@ -416,69 +479,70 @@ export default function Produtos() {
         </div>
       </div>
 
-      {/* CARDS - Mobile com Paginação e Ordenação Alfabética */}
+      {/* CARDS - Mobile */}
       <div className="md:hidden space-y-4">
         {currentItems.map((produto) => {
           const statusVenc = getStatusVencimento(produto.vencimento);
+          const isEstoqueBaixo = produto.quantidade < 10;
+          const isVencidoProd = isVencido(produto.vencimento);
+          
           return (
-            <div key={produto.id} className="bg-white rounded-lg shadow-sm border p-4">
-              {/* Header do Card */}
+            <div key={produto.id} className={`bg-white rounded-lg shadow-sm border p-4 ${isEstoqueBaixo ? 'border-red-200' : isVencidoProd ? 'border-orange-200' : 'border-gray-200'}`}>
               <div className="flex justify-between items-start mb-3">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-800 text-base">{produto.nome}</h3>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${isEstoqueBaixo ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
+                    <h3 className="font-semibold text-gray-800 text-base">{produto.nome}</h3>
+                  </div>
                   {produto.marca && (
-                    <p className="text-sm text-gray-500">{produto.marca}</p>
+                    <p className="text-sm text-gray-500 mt-1">{produto.marca}</p>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleEdit(produto)} className="text-blue-600">
-                    <PencilIcon className="w-5 h-5" />
+                  <button onClick={() => handleEdit(produto)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition">
+                    <PencilIcon className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDelete(produto.id)} className="text-red-600">
-                    <TrashIcon className="w-5 h-5" />
+                  <button onClick={() => handleDelete(produto.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition">
+                    <TrashIcon className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
-              {/* Informações do Card */}
               <div className="space-y-2">
-                {/* Estoque */}
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center py-1 border-b border-gray-100">
                   <span className="text-sm text-gray-500">Estoque:</span>
-                  <span className={`font-medium ${produto.quantidade < 10 ? 'text-red-600' : 'text-gray-700'}`}>
+                  <span className={`font-medium ${isEstoqueBaixo ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
                     {produto.quantidade} {produto.unidade}
+                    {isEstoqueBaixo && <span className="ml-1">⚠️ Baixo</span>}
                   </span>
                 </div>
 
-                {/* Fornecedor */}
                 {produto.fornecedor && (
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
                     <span className="text-sm text-gray-500">Fornecedor:</span>
                     <span className="text-sm text-gray-700">{produto.fornecedor}</span>
                   </div>
                 )}
 
-                {/* Preço */}
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center py-1 border-b border-gray-100">
                   <span className="text-sm text-gray-500">Preço:</span>
                   <span className="text-sm font-medium text-green-600">
                     R$ {(produto.preco || 0).toFixed(2)}
                   </span>
                 </div>
 
-                {/* Vencimento */}
                 {produto.vencimento && (
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
                     <span className="text-sm text-gray-500">Vencimento:</span>
-                    <span className={`text-sm ${isVencido(produto.vencimento) ? 'text-red-600' : 'text-gray-700'}`}>
+                    <span className={`text-sm ${isVencidoProd ? 'text-red-600 font-medium' : 'text-gray-700'}`}>
                       {new Date(produto.vencimento).toLocaleDateString('pt-BR')}
+                      {isVencidoProd && <span className="ml-1">⚠️</span>}
                     </span>
                   </div>
                 )}
 
-                {/* Status Vencimento */}
                 {statusVenc && (
-                  <div className="mt-2 pt-2 border-t">
+                  <div className="mt-2 pt-2">
                     <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${statusVenc.color} w-full justify-center`}>
                       {statusVenc.icon}
                       {statusVenc.text}
@@ -486,26 +550,35 @@ export default function Produtos() {
                   </div>
                 )}
 
-                {/* Observações */}
                 {produto.observacoes && (
                   <div className="mt-2 pt-2 border-t">
                     <p className="text-xs text-gray-500">Observações:</p>
-                    <p className="text-xs text-gray-600">{produto.observacoes}</p>
+                    <p className="text-xs text-gray-600 mt-1">{produto.observacoes}</p>
                   </div>
                 )}
               </div>
             </div>
           );
         })}
+        
         {filteredProdutos.length === 0 && (
           <div className="text-center py-12 bg-white rounded-lg border">
             <ShoppingBagIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">Nenhum produto encontrado</p>
+            <button
+              onClick={() => {
+                resetForm();
+                setShowModal(true);
+              }}
+              className="mt-4 text-blue-600 hover:text-blue-800 font-medium"
+            >
+              + Adicionar primeiro produto
+            </button>
           </div>
         )}
       </div>
 
-      {/* Paginação - Desktop e Mobile */}
+      {/* Paginação */}
       {totalPages > 1 && (
         <div className="flex justify-center items-center gap-2 mt-6">
           <button
@@ -520,43 +593,39 @@ export default function Produtos() {
             <ChevronLeftIcon className="w-5 h-5" />
           </button>
           
-          <div className="flex gap-1">
-            {/* Páginas - Desktop */}
-            <div className="hidden sm:flex gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => goToPage(pageNum)}
-                    className={`w-10 h-10 rounded-lg border transition ${
-                      currentPage === pageNum
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-            
-            {/* Páginas - Mobile (simplificado) */}
-            <div className="sm:hidden">
-              <span className="px-4 py-2 text-sm text-gray-600">
-                Página {currentPage} de {totalPages}
-              </span>
-            </div>
+          <div className="hidden sm:flex gap-1">
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => goToPage(pageNum)}
+                  className={`w-10 h-10 rounded-lg border transition font-medium ${
+                    currentPage === pageNum
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+          </div>
+          
+          <div className="sm:hidden">
+            <span className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg">
+              Página {currentPage} de {totalPages}
+            </span>
           </div>
           
           <button
@@ -684,7 +753,9 @@ export default function Produtos() {
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Ex: Luva de Procedimento"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Os produtos são ordenados alfabeticamente por este campo</p>
+                  <p className="text-xs text-blue-500 mt-1">
+                    💡 Os produtos são ordenados alfabeticamente por este campo
+                  </p>
                 </div>
 
                 <div>
@@ -751,10 +822,10 @@ export default function Produtos() {
                       getDiasRestantes(formData.vencimento) <= 90 ? 'text-yellow-600' : 'text-gray-500'
                     }`}>
                       {getDiasRestantes(formData.vencimento) > 0 
-                        ? `Vence em ${getDiasRestantes(formData.vencimento)} dias`
+                        ? `📅 Vence em ${getDiasRestantes(formData.vencimento)} dias`
                         : getDiasRestantes(formData.vencimento) === 0
-                        ? 'Vence hoje!'
-                        : 'Produto vencido!'}
+                        ? '⚠️ Vence hoje!'
+                        : '❌ Produto vencido!'}
                     </p>
                   )}
                 </div>
@@ -784,10 +855,10 @@ export default function Produtos() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50 transition">
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
                   {editingProduto ? 'Atualizar' : 'Cadastrar'}
                 </button>
               </div>
