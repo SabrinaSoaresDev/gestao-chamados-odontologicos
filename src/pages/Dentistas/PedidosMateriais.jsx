@@ -607,31 +607,44 @@ export default function PedidosMateriais() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              {/* Tipo de Pedido */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Tipo de Pedido *</label>
-                <div className="flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="radio" 
-                      value="avulso" 
-                      checked={formData.tipo === 'avulso'} 
-                      onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
-                    />
-                    <span>📦 Avulso</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input 
-                      type="radio" 
-                      value="mensal" 
-                      checked={formData.tipo === 'mensal'} 
-                      onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
-                      disabled={!podeFazerPedidoMensal && !editingPedido}
-                    />
-                    <span>📅 Mensal {!podeFazerPedidoMensal && '(disponível dias 20-30)'}</span>
-                  </label>
-                </div>
-              </div>
+             {/* Tipo de Pedido */}
+<div>
+  <label className="block text-sm font-medium mb-1">Tipo de Pedido *</label>
+  <div className="flex flex-wrap gap-4">
+    <label className="flex items-center gap-2">
+      <input 
+        type="radio" 
+        value="avulso" 
+        checked={formData.tipo === 'avulso'} 
+        onChange={(e) => setFormData({...formData, tipo: e.target.value})} 
+      />
+      <span>📦 Avulso (Permitido qualquer dia)</span>
+    </label>
+    <label className="flex items-center gap-2">
+      <input 
+        type="radio" 
+        value="mensal" 
+        checked={formData.tipo === 'mensal'} 
+        onChange={(e) => {
+          if (!podeFazerPedidoMensal && !editingPedido) {
+            toast.error('Pedidos mensais só podem ser feitos entre os dias 20 e 30 de cada mês');
+            return;
+          }
+          setFormData({...formData, tipo: e.target.value});
+        }} 
+      />
+      <span>📅 Mensal (Dias 20-30)</span>
+    </label>
+  </div>
+  {!podeFazerPedidoMensal && !editingPedido && (
+    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <p className="text-xs text-yellow-700">
+        📅 Hoje é dia {diaAtual}. O período para pedidos mensais é entre os dias <strong>20 e 30</strong>.
+        Enquanto isso, você pode fazer pedidos avulsos normalmente.
+      </p>
+    </div>
+  )}
+</div>
 
               {/* Unidade */}
               <div>
