@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { getDocs } from 'firebase/firestore';
 import { 
   HomeIcon, 
   ClipboardDocumentListIcon, 
@@ -141,22 +142,24 @@ export default function Layout({ children }) {
   };
 
   // Função para obter ícone baseado no tipo
-  const getNotificationIcon = (tipo) => {
-    switch(tipo) {
-      case 'chamado_urgente':
-        return <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />;
-      case 'chamado_novo':
-        return <ClipboardDocumentListIcon className="w-5 h-5 text-blue-400" />;
-      case 'chamado_concluido':
-        return <CheckCircleIcon className="w-5 h-5 text-green-400" />;
-      case 'chamado_atualizado':
-        return <ClockIcon className="w-5 h-5 text-yellow-400" />;
-      case 'novo_usuario':
-        return <UserPlusIcon className="w-5 h-5 text-green-400" />;
-      default:
-        return <BellIcon className="w-5 h-5 text-gray-400" />;
-    }
-  };
+ const getNotificationIcon = (tipo) => {
+  switch(tipo) {
+    case 'chamado_urgente':
+      return <ExclamationTriangleIcon className="w-5 h-5 text-red-400" />;
+    case 'chamado_novo':
+      return <ClipboardDocumentListIcon className="w-5 h-5 text-blue-400" />;
+    case 'chamado_concluido':
+      return <CheckCircleIcon className="w-5 h-5 text-green-400" />;
+    case 'chamado_atualizado':
+      return <ClockIcon className="w-5 h-5 text-yellow-400" />;
+    case 'novo_usuario':
+      return <UserPlusIcon className="w-5 h-5 text-green-400" />;
+    case 'chat_mensagem':
+      return <ChatBubbleLeftIcon className="w-5 h-5 text-purple-400" />;
+    default:
+      return <BellIcon className="w-5 h-5 text-gray-400" />;
+  }
+};
 
   // Carregar notificações
   useEffect(() => {
@@ -344,6 +347,151 @@ export default function Layout({ children }) {
       month: '2-digit'
     });
   };
+  // Adicione esta função dentro do componente Layout, após a declaração das funções
+const criarNotificacaoMensagem = async (chamadoId, chamadoTitulo, remetenteNome, mensagem) => {
+  try {
+    // Buscar o chamado para saber quem é o destinatário
+    const chamadoRef = doc(db, 'chamados', chamadoId);
+    const chamadoDoc = await getDoc(chamadoRef);
+    const chamadoData = chamadoDoc.data();
+    
+    // Determinar quem deve receber a notificação
+    let destinatarioId = null;
+    let destinatarioRole = null;
+    
+    // Se o remetente é admin, notifica o técnico ou dentista
+    // Se o remetente é técnico, notifica o admin
+    // Se o remetente é dentista, notifica o admin e técnico
+    const currentUserRole = userData?.role;
+    
+    if (currentUserRole === 'admin') {
+      // Admin enviou mensagem - notificar técnico responsável ou dentista
+      if (chamadoData.tecnicoId) {
+        destinatarioId = chamadoData.tecnicoId;
+        destinatarioRole = 'tecnico';
+      } else if (chamadoData.solicitanteId) {
+        destinatarioId = chamadoData.solicitanteId;
+        destinatarioRole = 'dentista';
+      }
+    } else if (currentUserRole === 'tecnico') {
+      // Técnico enviou mensagem - notificar admin
+      // Buscar admin
+      const adminQuery = query(collection(db, 'usuarios'), where('role', '==', 'admin'), where('ativo', '==', true));
+      const adminSnapshot = await getDocs(adminQuery);
+      if (!adminSnapshot.empty) {
+        const admin = adminSnapshot.docs[0];
+        destinatarioId = admin.id;
+        destinatarioRole = 'admin';
+      }
+    } else if (currentUserRole === 'dentista') {
+      // Dentista enviou mensagem - notificar admin e técnico
+      const notificacoes = [];
+      
+      // Notificar admin
+      const adminQuery = query(collection(db, 'usuarios'), where('role', '==', 'admin'), where('ativo', '==', true));
+      const adminSnapshot = await getDocs(adminQuery);
+      if (!adminSnapshot.empty) {
+        const admin = adminSnapshot.docs[0];
+        notificacoes.push({
+          userId: admin.id,
+          titulo: `📱 Nova mensagem no chamado #${chamadoId.slice(-6)}`,
+          mensagem: `${remetenteNome}: ${mensagem.substring(0, 100)}${mensagem.length > 100 ? '...' : ''}`,
+          tipo: 'chat_mensagem',
+          link: `/${chamadoData.solicitanteRole === 'dentista' ? 'dentista' : 'admin'}/chamados`,
+          chamadoId: chamadoId,
+          data: new Date(),
+          createdAt: serverTimestamp(),
+          lida: false
+        });
+      }
+      
+      // Notificar técnico se houver
+      if (chamadoData.tecnicoId) {
+        notificacoes.push({
+          userId: chamadoData.tecnicoId,
+          titulo: `📱 Nova mensagem no chamado #${chamadoId.slice(-6)}`,
+          mensagem: `${remetenteNome}: ${mensagem.substring(0, 100)}${mensagem.length > 100 ? '...' : ''}`,
+          tipo: 'chat_mensagem',
+          link: `/tecnico/chamados`,
+          chamadoId: chamadoId,
+          data: new Date(),
+          createdAt: serverTimestamp(),
+          lida: false
+        });
+      }
+      
+      // Criar todas as notificações
+      for (const notif of notificacoes) {
+        await addDoc(collection(db, 'notificacoes'), notif);
+      }
+      return;
+    }
+    
+    // Criar notificação para o destinatário único
+    if (destinatarioId) {
+      const notificacaoData = {
+        userId: destinatarioId,
+        titulo: `📱 Nova mensagem no chamado #${chamadoId.slice(-6)}`,
+        mensagem: `${remetenteNome}: ${mensagem.substring(0, 100)}${mensagem.length > 100 ? '...' : ''}`,
+        tipo: 'chat_mensagem',
+        link: `/${destinatarioRole}/${destinatarioRole === 'admin' ? 'chamados' : 'chamados'}`,
+        chamadoId: chamadoId,
+        data: new Date(),
+        createdAt: serverTimestamp(),
+        lida: false
+      };
+      
+      await addDoc(collection(db, 'notificacoes'), notificacaoData);
+      console.log('Notificação de mensagem criada para:', destinatarioId);
+    }
+  } catch (error) {
+    console.error('Erro ao criar notificação de mensagem:', error);
+  }
+};
+
+// Adicione também um listener para novas mensagens
+useEffect(() => {
+  if (!userData?.uid) return;
+
+  // Listener para novas mensagens em todos os chats
+  const chamadosQuery = query(collection(db, 'chamados'), where('status', '!=', 'cancelado'));
+  
+  const unsubscribeChamados = onSnapshot(chamadosQuery, (snapshot) => {
+    snapshot.docChanges().forEach(async (change) => {
+      if (change.type === 'modified') {
+        // Verificar se houve nova mensagem
+        const chamadoId = change.doc.id;
+        const chamadoData = change.doc.data();
+        
+        // Buscar última mensagem do chat
+        const chatCollection = `mensagens_chamado_${chamadoId}`;
+        const mensagensQuery = query(collection(db, chatCollection), orderBy('timestamp', 'desc'), limit(1));
+        
+        const mensagensSnapshot = await getDocs(mensagensQuery);
+        if (!mensagensSnapshot.empty) {
+          const ultimaMensagem = mensagensSnapshot.docs[0].data();
+          
+          // Se a mensagem não for do usuário atual e não foi notificada
+          if (ultimaMensagem.remetenteId !== userData.uid && !ultimaMensagem.notificada) {
+            // Marcar mensagem como notificada
+            const mensagemRef = doc(db, chatCollection, mensagensSnapshot.docs[0].id);
+            await updateDoc(mensagemRef, { notificada: true });
+            
+            // Criar notificação
+            await criarNotificacaoMensagem(
+              chamadoId,
+              chamadoData.titulo,
+              ultimaMensagem.remetenteNome,
+              ultimaMensagem.texto
+            );
+          }
+        }
+      }
+    });
+  });
+  
+  return () => unsubscribeChamados();
+}, [userData?.uid]);
 
   return (
     <div className="min-h-screen bg-gray-800">

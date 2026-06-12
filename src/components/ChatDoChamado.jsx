@@ -244,6 +244,40 @@ export default function ChatDoChamado({ chamado, onClose, onNovaMensagem }) {
     }
     return null;
   };
+  // ChatDoChamado.js - Adicione esta função ao componente
+const enviarMensagemComNotificacao = async () => {
+  if (!novaMensagem.trim()) return;
+  
+  try {
+    const mensagemData = {
+      texto: novaMensagem,
+      remetenteId: userData.uid,
+      remetenteNome: userData.nome,
+      remetenteRole: userData.role,
+      timestamp: new Date(),
+      lida: false,
+      notificada: false // Campo para controlar se já gerou notificação
+    };
+    
+    await addDoc(collection(db, `mensagens_chamado_${chamado.id}`), mensagemData);
+    
+    // Atualizar último chat no chamado
+    const chamadoRef = doc(db, 'chamados', chamado.id);
+    await updateDoc(chamadoRef, {
+      ultimaMensagem: novaMensagem.substring(0, 100),
+      ultimaMensagemData: new Date(),
+      ultimoRemetente: userData.nome
+    });
+    
+    setNovaMensagem('');
+    scrollToBottom();
+    
+    // A notificação será criada pelo listener do Layout
+  } catch (error) {
+    console.error('Erro ao enviar mensagem:', error);
+    toast.error('Erro ao enviar mensagem');
+  }
+};
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]" onClick={onClose}>

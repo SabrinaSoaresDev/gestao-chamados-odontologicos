@@ -7,7 +7,9 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  orderBy
+  orderBy,
+  addDoc,
+  where
 } from 'firebase/firestore';
 import { 
   EyeIcon,
@@ -28,7 +30,8 @@ import {
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  PrinterIcon
+  PrinterIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
 import { CheckIcon } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
@@ -47,6 +50,25 @@ export default function GerenciarPedidos() {
   const [unidades, setUnidades] = useState([]);
   const [novaObservacao, setNovaObservacao] = useState('');
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  
+  // Estados para o modal de criar pedido
+  const [showCriarModal, setShowCriarModal] = useState(false);
+  const [dentistas, setDentistas] = useState([]);
+  const [produtosDisponiveis, setProdutosDisponiveis] = useState([]);
+  const [novoPedido, setNovoPedido] = useState({
+    dentistaId: '',
+    dentistaNome: '',
+    unidade: '',
+    tipo: 'avulso',
+    observacoes: '',
+    itens: []
+  });
+  const [produtoSelecionado, setProdutoSelecionado] = useState({
+    id: '',
+    nome: '',
+    marca: '',
+    quantidade: 1
+  });
   
   // Paginação
   const [currentPage, setCurrentPage] = useState(1);
@@ -71,6 +93,66 @@ export default function GerenciarPedidos() {
     });
     return () => unsubscribe();
   }, []);
+  
+  // Carregar dentistas da coleção de usuários (tipo = 'dentista' e ativo = true)
+  useEffect(() => {
+    const usuariosRef = collection(db, 'usuarios');
+    const q = query(
+      usuariosRef, 
+      where('role', '==', 'dentista'),
+      where('ativo', '==', true)
+    );
+    
+    const unsubscribeDentistas = onSnapshot(q, (snapshot) => {
+      const dentistasData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        uid: doc.id,
+        nome: doc.data().nome || '',
+        email: doc.data().email || '',
+        unidade: doc.data().unidade || '',
+        telefone: doc.data().telefone || '',
+        especialidade: doc.data().especialidade || '',
+        ativo: doc.data().ativo || false
+      }));
+      
+      console.log('🦷 Dentistas carregados:', dentistasData);
+      setDentistas(dentistasData);
+    }, (error) => {
+      console.error('Erro ao carregar dentistas:', error);
+      toast.error('Erro ao carregar lista de dentistas');
+    });
+
+    // Carregar produtos disponíveis
+    const produtosRef = collection(db, 'produtos');
+    const unsubscribeProdutos = onSnapshot(produtosRef, (snapshot) => {
+      const produtosData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProdutosDisponiveis(produtosData);
+    });
+
+    return () => {
+      unsubscribeDentistas();
+      unsubscribeProdutos();
+    };
+  }, []);
+  
+  // Sincronizar selectedPedido quando a lista de pedidos mudar
+  useEffect(() => {
+    if (selectedPedido) {
+      const pedidoAtualizado = pedidos.find(p => p.id === selectedPedido.id);
+      if (pedidoAtualizado) {
+        setSelectedPedido(pedidoAtualizado);
+        setQuantidadesEntregues(
+          pedidoAtualizado.itens?.reduce((acc, i, idx) => ({ 
+            ...acc, 
+            [idx]: i.quantidadeEntregue || 0 
+          }), {}) || {}
+        );
+      }
+    }
+  }, [pedidos]);
 
   // Filtrar pedidos
   useEffect(() => {
@@ -91,6 +173,121 @@ export default function GerenciarPedidos() {
     setFilteredPedidos(filtered);
     setCurrentPage(1);
   }, [searchTerm, filtroStatus, filtroUnidade, pedidos]);
+
+  // Funções para o modal de criar pedido
+  const handleAdicionarItem = () => {
+    if (!produtoSelecionado.id || !produtoSelecionado.nome || produtoSelecionado.quantidade <= 0) {
+      toast.error('Preencha todos os campos do produto');
+      return;
+    }
+
+    const produtoExistente = novoPedido.itens.find(item => item.produtoId === produtoSelecionado.id);
+    
+    if (produtoExistente) {
+      const novosItens = novoPedido.itens.map(item =>
+        item.produtoId === produtoSelecionado.id
+          ? { ...item, quantidade: item.quantidade + produtoSelecionado.quantidade }
+          : item
+      );
+      setNovoPedido({ ...novoPedido, itens: novosItens });
+      toast.success('Quantidade atualizada!');
+    } else {
+      setNovoPedido({
+        ...novoPedido,
+        itens: [
+          ...novoPedido.itens,
+          {
+            produtoId: produtoSelecionado.id,
+            produtoNome: produtoSelecionado.nome,
+            marca: produtoSelecionado.marca,
+            quantidade: produtoSelecionado.quantidade,
+            quantidadeEntregue: 0
+          }
+        ]
+      });
+      toast.success('Produto adicionado!');
+    }
+
+    setProdutoSelecionado({
+      id: '',
+      nome: '',
+      marca: '',
+      quantidade: 1
+    });
+  };
+
+  const handleRemoverItem = (index) => {
+    const novosItens = novoPedido.itens.filter((_, i) => i !== index);
+    setNovoPedido({ ...novoPedido, itens: novosItens });
+    toast.success('Item removido');
+  };
+
+  const handleSalvarPedido = async () => {
+    if (!novoPedido.dentistaId) {
+      toast.error('Selecione um dentista');
+      return;
+    }
+    if (!novoPedido.unidade) {
+      toast.error('Unidade não informada');
+      return;
+    }
+    if (novoPedido.itens.length === 0) {
+      toast.error('Adicione pelo menos um produto');
+      return;
+    }
+
+    try {
+      const pedidoData = {
+        dentistaId: novoPedido.dentistaId,
+        dentistaNome: novoPedido.dentistaNome,
+        unidade: novoPedido.unidade,
+        tipo: novoPedido.tipo,
+        status: 'pendente',
+        dataPedido: new Date(),
+        itens: novoPedido.itens,
+        observacoes: novoPedido.observacoes || '',
+        historico: [{
+          data: new Date(),
+          acao: 'Pedido criado pelo administrador',
+          usuario: 'Admin',
+          tipo: 'criacao'
+        }]
+      };
+
+      await addDoc(collection(db, 'pedidos'), pedidoData);
+      
+      toast.success('Pedido criado com sucesso!');
+      
+      setNovoPedido({
+        dentistaId: '',
+        dentistaNome: '',
+        unidade: '',
+        tipo: 'avulso',
+        observacoes: '',
+        itens: []
+      });
+      setShowCriarModal(false);
+    } catch (error) {
+      console.error('Erro ao criar pedido:', error);
+      toast.error('Erro ao criar pedido');
+    }
+  };
+
+  // Função para selecionar o dentista e preencher automaticamente os dados
+  const handleSelecionarDentista = (dentistaId) => {
+    const dentista = dentistas.find(d => d.id === dentistaId);
+    if (dentista) {
+      setNovoPedido({
+        ...novoPedido,
+        dentistaId: dentista.id,
+        dentistaNome: dentista.nome,
+        unidade: dentista.unidade || '' // Puxa a unidade do cadastro do dentista
+      });
+      
+      // Mostrar feedback visual
+      toast.success(`Dentista selecionado: ${dentista.nome} - ${dentista.unidade || 'Unidade não cadastrada'}`);
+    }
+  };
 
   // Paginação
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -205,7 +402,7 @@ export default function GerenciarPedidos() {
     }
   };
 
-  // Atualizar múltiplas quantidades e mudar status para "em separação"
+  // Atualizar múltiplas quantidades
   const handleAtualizarMultiplasQuantidades = async () => {
     if (!selectedPedido) return;
     
@@ -228,24 +425,34 @@ export default function GerenciarPedidos() {
       return;
     }
     
+    const deveMudarStatus = pedido.status === 'aprovado';
+    const novoStatus = deveMudarStatus ? 'separacao' : pedido.status;
+    
     try {
       await updateDoc(doc(db, 'pedidos', selectedPedido.id), {
         itens: novosItens,
-        ...(pedido.status === 'aprovado' && { status: 'separacao' }),
+        status: novoStatus,
         historico: [
           ...(pedido.historico || []),
           { 
             data: new Date(), 
-            acao: `Quantidades atualizadas: ${alteracoes.join('; ')}${pedido.status === 'aprovado' ? ' - Status alterado para EM SEPARAÇÃO' : ''}`,
+            acao: `Quantidades atualizadas: ${alteracoes.join('; ')}${deveMudarStatus ? ' - Status alterado para EM SEPARAÇÃO' : ''}`,
             usuario: 'Admin',
             tipo: 'quantidade'
           }
         ]
       });
-      toast.success(pedido.status === 'aprovado' ? 'Quantidades atualizadas! Status alterado para "Em Separação"' : 'Quantidades atualizadas!');
+      
+      setSelectedPedido({ 
+        ...selectedPedido, 
+        itens: novosItens, 
+        status: novoStatus 
+      });
+      
+      toast.success(deveMudarStatus ? 'Quantidades atualizadas! Status alterado para "Em Separação"' : 'Quantidades atualizadas!');
       setEditandoItens(false);
-      setSelectedPedido({ ...selectedPedido, itens: novosItens, status: pedido.status === 'aprovado' ? 'separacao' : pedido.status });
     } catch (error) {
+      console.error('Erro ao atualizar:', error);
       toast.error('Erro ao atualizar');
     }
   };
@@ -468,22 +675,6 @@ export default function GerenciarPedidos() {
             border-top: 1px solid #e5e7eb;
             padding-top: 20px;
           }
-          .produto-detalhe {
-            display: flex;
-            flex-direction: column;
-          }
-          .produto-marca {
-            font-size: 11px;
-            color: #6b7280;
-            margin-top: 2px;
-          }
-          .quantidade-parcial {
-            color: #ea580c;
-          }
-          .quantidade-completa {
-            color: #16a34a;
-            font-weight: 600;
-          }
           @media print {
             body {
               padding: 20px;
@@ -494,9 +685,7 @@ export default function GerenciarPedidos() {
       <body>
         <div class="print-container">
           <div class="header">
-            <div class="logo">
-              🦷 ORTO<span>DONSIST</span>
-            </div>
+            <div class="logo">🦷 ORTO<span>DONSIST</span></div>
             <div class="subtitle">Materiais Odontológicos • Qualidade e Confiança</div>
             <div class="title">COMPROVANTE DE PEDIDO</div>
           </div>
@@ -536,79 +725,39 @@ export default function GerenciarPedidos() {
 
           <table class="items-table">
             <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Solicitado</th>
-                <th>Entregue</th>
-                <th>Status</th>
-              </tr>
+              <tr><th>Produto</th><th>Solicitado</th><th>Entregue</th><th>Status</th></tr>
             </thead>
             <tbody>
               ${selectedPedido.itens.map(item => {
                 const entregue = item.quantidadeEntregue || 0;
-                const statusClass = entregue === item.quantidade ? 'quantidade-completa' : (entregue > 0 ? 'quantidade-parcial' : '');
                 const statusText = entregue === 0 ? 'Pendente' : (entregue === item.quantidade ? 'Completo' : 'Parcial');
-                return `
-                  <tr>
-                    <td>
-                      <div class="produto-detalhe">
-                        <strong>${item.produtoNome}</strong>
-                        ${item.marca ? `<div class="produto-marca">Marca: ${item.marca}</div>` : ''}
-                      </div>
-                    </td>
-                    <td>${item.quantidade} un.</td>
-                    <td class="${statusClass}">${entregue} un.</td>
-                    <td>${statusText}</td>
-                  </tr>
-                `;
+                return `<tr>
+                  <td><strong>${item.produtoNome}</strong>${item.marca ? `<br><small>${item.marca}</small>` : ''}</td>
+                  <td>${item.quantidade} un.</td>
+                  <td>${entregue} un.</td>
+                  <td>${statusText}</td>
+                </tr>`;
               }).join('')}
             </tbody>
           </table>
 
-          ${selectedPedido.observacoes ? `
-            <div class="observacoes">
-              <div class="observacoes-label">📝 OBSERVAÇÕES DO SOLICITANTE</div>
-              <div style="font-size: 13px; color: #78350f;">${selectedPedido.observacoes}</div>
-            </div>
-          ` : ''}
-
-          ${selectedPedido.observacoesAdmin ? `
-            <div class="observacoes observacoes-admin">
-              <div class="observacoes-label">📋 OBSERVAÇÕES DO ADMINISTRADOR</div>
-              <div style="font-size: 13px; color: #14532d;">${selectedPedido.observacoesAdmin}</div>
-            </div>
-          ` : ''}
+          ${selectedPedido.observacoes ? `<div class="observacoes"><div class="observacoes-label">📝 OBSERVAÇÕES DO SOLICITANTE</div><div>${selectedPedido.observacoes}</div></div>` : ''}
+          ${selectedPedido.observacoesAdmin ? `<div class="observacoes observacoes-admin"><div class="observacoes-label">📋 OBSERVAÇÕES DO ADMINISTRADOR</div><div>${selectedPedido.observacoesAdmin}</div></div>` : ''}
 
           <div class="assinatura-section">
             <div class="assinatura-grid">
-              <div class="assinatura-box">
-                <div class="assinatura-linha"></div>
-                <div class="assinatura-texto">Assinatura de quem recebeu</div>
-              </div>
-              <div class="assinatura-box">
-                <div class="assinatura-linha"></div>
-                <div class="assinatura-texto">Carimbo / Identificação</div>
-              </div>
+              <div class="assinatura-box"><div class="assinatura-linha"></div><div class="assinatura-texto">Assinatura de quem recebeu</div></div>
+              <div class="assinatura-box"><div class="assinatura-linha"></div><div class="assinatura-texto">Carimbo / Identificação</div></div>
             </div>
-            <div class="data-recebimento">
-              Data de recebimento: ${dataRecebimentoFormatada}
-            </div>
+            <div class="data-recebimento">Data de recebimento: ${dataRecebimentoFormatada}</div>
           </div>
 
           <div class="footer">
             <div><strong>Ortodonsist</strong> - Materiais Odontológicos</div>
-            <div style="font-size: 9px; margin-top: 8px;">
-              Este documento é um comprovante válido do pedido realizado<br>
-              Em caso de dúvidas, entre em contato com o administrativo
-            </div>
+            <div style="font-size: 9px; margin-top: 8px;">Este documento é um comprovante válido do pedido realizado</div>
           </div>
         </div>
-        <script>
-          window.onload = function() {
-            window.print();
-            setTimeout(function() { window.close(); }, 1000);
-          };
-        <\/script>
+        <script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 1000); };<\/script>
       </body>
       </html>
     `);
@@ -640,14 +789,14 @@ export default function GerenciarPedidos() {
   };
 
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'pendente': return 'bg-yellow-100 text-yellow-800';
-      case 'aprovado': return 'bg-blue-100 text-blue-800';
-      case 'separacao': return 'bg-purple-100 text-purple-800';
-      case 'entregue': return 'bg-green-100 text-green-800';
-      case 'cancelado': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100';
-    }
+    const colors = {
+      pendente: 'bg-yellow-100 text-yellow-800',
+      aprovado: 'bg-blue-100 text-blue-800',
+      separacao: 'bg-purple-100 text-purple-800',
+      entregue: 'bg-green-100 text-green-800',
+      cancelado: 'bg-red-100 text-red-800'
+    };
+    return colors[status] || 'bg-gray-100';
   };
 
   const getStatusIcon = (status) => {
@@ -662,14 +811,14 @@ export default function GerenciarPedidos() {
   };
 
   const getStatusText = (status) => {
-    switch(status) {
-      case 'pendente': return 'Pendente';
-      case 'aprovado': return 'Aprovado';
-      case 'separacao': return 'Em Separação';
-      case 'entregue': return 'Entregue';
-      case 'cancelado': return 'Cancelado';
-      default: return status;
-    }
+    const texts = {
+      pendente: 'Pendente',
+      aprovado: 'Aprovado',
+      separacao: 'Em Separação',
+      entregue: 'Entregue',
+      cancelado: 'Cancelado'
+    };
+    return texts[status] || status;
   };
 
   const formatDate = (date) => {
@@ -679,24 +828,18 @@ export default function GerenciarPedidos() {
 
   const formatDateTime = (date) => {
     if (!date) return '-';
-    return new Date(date).toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return new Date(date).toLocaleString('pt-BR');
   };
 
   const getHistoricoIcon = (tipo) => {
-    switch(tipo) {
-      case 'status': return <ArrowPathIcon className="w-4 h-4 text-blue-500" />;
-      case 'quantidade': return <PencilIcon className="w-4 h-4 text-green-500" />;
-      case 'observacao': return <ChatBubbleLeftIcon className="w-4 h-4 text-purple-500" />;
-      case 'reabertura': return <ArrowPathIcon className="w-4 h-4 text-orange-500" />;
-      case 'reversao': return <ArrowPathIcon className="w-4 h-4 text-red-500" />;
-      default: return <ClockIcon className="w-4 h-4 text-gray-500" />;
-    }
+    const icons = {
+      status: <ArrowPathIcon className="w-4 h-4 text-blue-500" />,
+      quantidade: <PencilIcon className="w-4 h-4 text-green-500" />,
+      observacao: <ChatBubbleLeftIcon className="w-4 h-4 text-purple-500" />,
+      reabertura: <ArrowPathIcon className="w-4 h-4 text-orange-500" />,
+      reversao: <ArrowPathIcon className="w-4 h-4 text-red-500" />
+    };
+    return icons[tipo] || <ClockIcon className="w-4 h-4 text-gray-500" />;
   };
 
   const stats = {
@@ -724,69 +867,43 @@ export default function GerenciarPedidos() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Pedidos de Materiais</h1>
           <p className="text-sm text-gray-600">Gerencie os pedidos dos dentistas</p>
         </div>
-        <button onClick={exportToCSV} className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm sm:text-base w-full sm:w-auto justify-center">
-          <DocumentArrowDownIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-          Exportar
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={() => setShowCriarModal(true)} 
+            className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm sm:text-base w-full sm:w-auto justify-center"
+          >
+            <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+            Novo Pedido
+          </button>
+          <button onClick={exportToCSV} className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm sm:text-base w-full sm:w-auto justify-center">
+            <DocumentArrowDownIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+            Exportar
+          </button>
+        </div>
       </div>
 
-      {/* Cards */}
+      {/* Cards de Estatísticas */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 sm:gap-4">
-        <div className="bg-white rounded-lg p-3 sm:p-4 border">
-          <p className="text-xs sm:text-sm text-gray-500">Total</p>
-          <p className="text-xl sm:text-2xl font-bold">{stats.total}</p>
-        </div>
-        <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 border border-yellow-200">
-          <p className="text-xs sm:text-sm text-yellow-600">Pendentes</p>
-          <p className="text-xl sm:text-2xl font-bold text-yellow-700">{stats.pendentes}</p>
-        </div>
-        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200">
-          <p className="text-xs sm:text-sm text-blue-600">Aprovados</p>
-          <p className="text-xl sm:text-2xl font-bold text-blue-700">{stats.aprovados}</p>
-        </div>
-        <div className="bg-purple-50 rounded-lg p-3 sm:p-4 border border-purple-200">
-          <p className="text-xs sm:text-sm text-purple-600">Em Separação</p>
-          <p className="text-xl sm:text-2xl font-bold text-purple-700">{stats.separacao}</p>
-        </div>
-        <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200">
-          <p className="text-xs sm:text-sm text-green-600">Entregues</p>
-          <p className="text-xl sm:text-2xl font-bold text-green-700">{stats.entregues}</p>
-        </div>
-        <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200">
-          <p className="text-xs sm:text-sm text-red-600">Cancelados</p>
-          <p className="text-xl sm:text-2xl font-bold text-red-700">{stats.cancelados}</p>
-        </div>
+        <div className="bg-white rounded-lg p-3 sm:p-4 border"><p className="text-xs sm:text-sm text-gray-500">Total</p><p className="text-xl sm:text-2xl font-bold">{stats.total}</p></div>
+        <div className="bg-yellow-50 rounded-lg p-3 sm:p-4 border border-yellow-200"><p className="text-xs sm:text-sm text-yellow-600">Pendentes</p><p className="text-xl sm:text-2xl font-bold text-yellow-700">{stats.pendentes}</p></div>
+        <div className="bg-blue-50 rounded-lg p-3 sm:p-4 border border-blue-200"><p className="text-xs sm:text-sm text-blue-600">Aprovados</p><p className="text-xl sm:text-2xl font-bold text-blue-700">{stats.aprovados}</p></div>
+        <div className="bg-purple-50 rounded-lg p-3 sm:p-4 border border-purple-200"><p className="text-xs sm:text-sm text-purple-600">Em Separação</p><p className="text-xl sm:text-2xl font-bold text-purple-700">{stats.separacao}</p></div>
+        <div className="bg-green-50 rounded-lg p-3 sm:p-4 border border-green-200"><p className="text-xs sm:text-sm text-green-600">Entregues</p><p className="text-xl sm:text-2xl font-bold text-green-700">{stats.entregues}</p></div>
+        <div className="bg-red-50 rounded-lg p-3 sm:p-4 border border-red-200"><p className="text-xs sm:text-sm text-red-600">Cancelados</p><p className="text-xl sm:text-2xl font-bold text-red-700">{stats.cancelados}</p></div>
       </div>
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow p-3 sm:p-4">
         <div className="relative mb-3">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Buscar por dentista, unidade..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 sm:pl-10 pr-3 py-2 border rounded-lg text-sm sm:text-base"
-          />
+          <input type="text" placeholder="Buscar por dentista, unidade..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 sm:pl-10 pr-3 py-2 border rounded-lg text-sm sm:text-base" />
         </div>
-
-        <button
-          onClick={() => setFiltrosAbertos(!filtrosAbertos)}
-          className="w-full flex items-center justify-between p-2 bg-gray-50 rounded-lg sm:hidden"
-        >
+        <button onClick={() => setFiltrosAbertos(!filtrosAbertos)} className="w-full flex items-center justify-between p-2 bg-gray-50 rounded-lg sm:hidden">
           <span className="text-sm font-medium text-gray-600">Filtros</span>
-          <svg className={`w-5 h-5 transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <svg className={`w-5 h-5 transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
         </button>
-
         <div className={`${filtrosAbertos ? 'block' : 'hidden'} sm:flex sm:flex-row gap-3 mt-3 sm:mt-0`}>
-          <select
-            value={filtroStatus}
-            onChange={(e) => setFiltroStatus(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm sm:text-base mb-2 sm:mb-0"
-          >
+          <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm sm:text-base mb-2 sm:mb-0">
             <option value="todos">📋 Todos os status</option>
             <option value="pendente">🟡 Pendentes</option>
             <option value="aprovado">🔵 Aprovados</option>
@@ -794,35 +911,18 @@ export default function GerenciarPedidos() {
             <option value="entregue">🟢 Entregues</option>
             <option value="cancelado">🔴 Cancelados</option>
           </select>
-
-          <select
-            value={filtroUnidade}
-            onChange={(e) => setFiltroUnidade(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm sm:text-base"
-          >
+          <select value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)} className="w-full sm:w-auto px-3 py-2 border rounded-lg text-sm sm:text-base">
             <option value="todas">🏢 Todas unidades</option>
             {unidades.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
       </div>
 
-      {/* TABELA - Desktop */}
+      {/* Tabela Desktop */}
       <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Solicitante</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Unidade</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Tipo</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Itens</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Data Pedido</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Data Entrega</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Ações</th>
-              </tr>
-            </thead>
+            <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">ID</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Solicitante</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Unidade</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Tipo</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Itens</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Data Pedido</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Data Entrega</th><th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Ações</th></tr></thead>
             <tbody className="divide-y divide-gray-200">
               {currentItems.map((pedido) => (
                 <tr key={pedido.id} className="hover:bg-gray-50">
@@ -831,250 +931,49 @@ export default function GerenciarPedidos() {
                   <td className="px-4 py-3 text-sm">{pedido.unidade || '-'}</td>
                   <td className="px-4 py-3 text-sm">{pedido.tipo === 'mensal' ? '📅 Mensal' : '📦 Avulso'}</td>
                   <td className="px-4 py-3 text-sm">{pedido.itens?.length || 0} produtos</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${getStatusColor(pedido.status)}`}>
-                      {getStatusIcon(pedido.status)}
-                      {getStatusText(pedido.status)}
-                    </span>
-                  </td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full ${getStatusColor(pedido.status)}`}>{getStatusIcon(pedido.status)}{getStatusText(pedido.status)}</span></td>
                   <td className="px-4 py-3 text-sm">{formatDate(pedido.dataPedido)}</td>
                   <td className="px-4 py-3 text-sm">{formatDate(pedido.dataEntrega)}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedPedido(pedido);
-                          setQuantidadesEntregues(pedido.itens?.reduce((acc, i, idx) => ({ ...acc, [idx]: i.quantidadeEntregue || 0 }), {}) || {});
-                          setShowDetalhesModal(true);
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Visualizar"
-                      >
-                        <EyeIcon className="w-5 h-5" />
-                      </button>
-                      {pedido.status === 'pendente' && (
-                        <>
-                          <button onClick={() => handleAtualizarStatus(pedido.id, 'aprovado')} className="text-green-600 hover:text-green-800" title="Aprovar">
-                            <CheckCircleIcon className="w-5 h-5" />
-                          </button>
-                          <button onClick={() => handleAtualizarStatus(pedido.id, 'cancelado')} className="text-red-600 hover:text-red-800" title="Cancelar">
-                            <XCircleIcon className="w-5 h-5" />
-                          </button>
-                        </>
-                      )}
-                      {pedido.status === 'aprovado' && (
-                        <button onClick={() => handleAtualizarStatus(pedido.id, 'entregue')} className="text-blue-600 hover:text-blue-800" title="Marcar entregue">
-                          <TruckIcon className="w-5 h-5" />
-                        </button>
-                      )}
-                      {pedido.status === 'entregue' && (
-                        <button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600 hover:text-orange-800" title="Reverter entrega">
-                          <ArrowPathIcon className="w-5 h-5" />
-                        </button>
-                      )}
-                      {pedido.status === 'cancelado' && (
-                        <button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600 hover:text-orange-800" title="Reabrir">
-                          <ArrowPathIcon className="w-5 h-5" />
-                        </button>
-                      )}
-                      <button onClick={() => handleExcluirPedido(pedido.id)} className="text-red-600 hover:text-red-800" title="Excluir">
-                        <TrashIcon className="w-5 h-5" />
-                      </button>
+                      <button onClick={() => { setSelectedPedido(pedido); setQuantidadesEntregues(pedido.itens?.reduce((acc, i, idx) => ({ ...acc, [idx]: i.quantidadeEntregue || 0 }), {}) || {}); setShowDetalhesModal(true); }} className="text-blue-600 hover:text-blue-800"><EyeIcon className="w-5 h-5" /></button>
+                      {pedido.status === 'pendente' && (<><button onClick={() => handleAtualizarStatus(pedido.id, 'aprovado')} className="text-green-600 hover:text-green-800"><CheckCircleIcon className="w-5 h-5" /></button><button onClick={() => handleAtualizarStatus(pedido.id, 'cancelado')} className="text-red-600 hover:text-red-800"><XCircleIcon className="w-5 h-5" /></button></>)}
+                      {pedido.status === 'aprovado' && (<button onClick={() => handleAtualizarStatus(pedido.id, 'entregue')} className="text-blue-600 hover:text-blue-800"><TruckIcon className="w-5 h-5" /></button>)}
+                      {pedido.status === 'entregue' && (<button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600 hover:text-orange-800"><ArrowPathIcon className="w-5 h-5" /></button>)}
+                      {pedido.status === 'cancelado' && (<button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600 hover:text-orange-800"><ArrowPathIcon className="w-5 h-5" /></button>)}
+                      <button onClick={() => handleExcluirPedido(pedido.id)} className="text-red-600 hover:text-red-800"><TrashIcon className="w-5 h-5" /></button>
                     </div>
-                   </td>
-                 </tr>
-              ))}
-              {filteredPedidos.length === 0 && (
-                <tr>
-                  <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
-                    Nenhum pedido encontrado
                   </td>
                 </tr>
-              )}
+              ))}
+              {filteredPedidos.length === 0 && (<tr><td colSpan="9" className="px-4 py-8 text-center text-gray-500">Nenhum pedido encontrado</td></tr>)}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* CARDS - Mobile */}
+      {/* Cards Mobile */}
       <div className="md:hidden space-y-4">
         {currentItems.map((pedido) => (
           <div key={pedido.id} className="bg-white rounded-lg shadow-sm border p-4">
             <div className="flex justify-between items-start mb-3">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap mb-2">
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                    #{pedido.id?.slice(-6)}
-                  </span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${getStatusColor(pedido.status)}`}>
-                    {getStatusIcon(pedido.status)}
-                    {getStatusText(pedido.status)}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {pedido.tipo === 'mensal' ? '📅 Mensal' : '📦 Avulso'}
-                  </span>
-                </div>
-                <p className="font-medium text-gray-800">{pedido.dentistaNome}</p>
-              </div>
+              <div><div className="flex items-center gap-2 flex-wrap mb-2"><span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">#{pedido.id?.slice(-6)}</span><span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${getStatusColor(pedido.status)}`}>{getStatusIcon(pedido.status)}{getStatusText(pedido.status)}</span><span className="text-xs text-gray-500">{pedido.tipo === 'mensal' ? '📅 Mensal' : '📦 Avulso'}</span></div><p className="font-medium text-gray-800">{pedido.dentistaNome}</p></div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setSelectedPedido(pedido);
-                    setQuantidadesEntregues(pedido.itens?.reduce((acc, i, idx) => ({ ...acc, [idx]: i.quantidadeEntregue || 0 }), {}) || {});
-                    setShowDetalhesModal(true);
-                  }}
-                  className="text-blue-600"
-                  title="Detalhes"
-                >
-                  <EyeIcon className="w-5 h-5" />
-                </button>
-                {pedido.status === 'pendente' && (
-                  <>
-                    <button onClick={() => handleAtualizarStatus(pedido.id, 'aprovado')} className="text-green-600" title="Aprovar">
-                      <CheckCircleIcon className="w-5 h-5" />
-                    </button>
-                    <button onClick={() => handleAtualizarStatus(pedido.id, 'cancelado')} className="text-red-600" title="Cancelar">
-                      <XCircleIcon className="w-5 h-5" />
-                    </button>
-                  </>
-                )}
-                {pedido.status === 'aprovado' && (
-                  <button onClick={() => handleAtualizarStatus(pedido.id, 'entregue')} className="text-blue-600" title="Marcar entregue">
-                    <TruckIcon className="w-5 h-5" />
-                  </button>
-                )}
-                {pedido.status === 'entregue' && (
-                  <button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600" title="Reverter entrega">
-                    <ArrowPathIcon className="w-5 h-5" />
-                  </button>
-                )}
-                {pedido.status === 'cancelado' && (
-                  <button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600" title="Reabrir">
-                    <ArrowPathIcon className="w-5 h-5" />
-                  </button>
-                )}
-                <button onClick={() => handleExcluirPedido(pedido.id)} className="text-red-600" title="Excluir">
-                  <TrashIcon className="w-5 h-5" />
-                </button>
+                <button onClick={() => { setSelectedPedido(pedido); setQuantidadesEntregues(pedido.itens?.reduce((acc, i, idx) => ({ ...acc, [idx]: i.quantidadeEntregue || 0 }), {}) || {}); setShowDetalhesModal(true); }} className="text-blue-600"><EyeIcon className="w-5 h-5" /></button>
+                {pedido.status === 'pendente' && (<><button onClick={() => handleAtualizarStatus(pedido.id, 'aprovado')} className="text-green-600"><CheckCircleIcon className="w-5 h-5" /></button><button onClick={() => handleAtualizarStatus(pedido.id, 'cancelado')} className="text-red-600"><XCircleIcon className="w-5 h-5" /></button></>)}
+                {pedido.status === 'aprovado' && (<button onClick={() => handleAtualizarStatus(pedido.id, 'entregue')} className="text-blue-600"><TruckIcon className="w-5 h-5" /></button>)}
+                {pedido.status === 'entregue' && (<button onClick={() => handleReverterEntrega(pedido.id)} className="text-orange-600"><ArrowPathIcon className="w-5 h-5" /></button>)}
+                {pedido.status === 'cancelado' && (<button onClick={() => handleReabrirPedido(pedido.id)} className="text-orange-600"><ArrowPathIcon className="w-5 h-5" /></button>)}
+                <button onClick={() => handleExcluirPedido(pedido.id)} className="text-red-600"><TrashIcon className="w-5 h-5" /></button>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <BuildingOfficeIcon className="w-4 h-4" />
-                {pedido.unidade}
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <ShoppingCartIcon className="w-4 h-4" />
-                {pedido.itens?.length || 0} produtos - Total: {pedido.itens?.reduce((acc, i) => acc + i.quantidade, 0)} unidades
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <CalendarIcon className="w-4 h-4" />
-                {formatDate(pedido.dataPedido)}
-              </div>
-              {pedido.dataEntrega && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <TruckIcon className="w-4 h-4" />
-                  Entregue em: {formatDate(pedido.dataEntrega)}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 pt-3 border-t">
-              <p className="text-xs text-gray-500 mb-2">Produtos:</p>
-              <div className="space-y-1">
-                {pedido.itens?.slice(0, 2).map((item, idx) => (
-                  <div key={idx} className="text-xs flex justify-between">
-                    <span className="text-gray-600">{item.produtoNome}</span>
-                    <span className="font-medium">{item.quantidade} unid. (entregue: {item.quantidadeEntregue || 0})</span>
-                  </div>
-                ))}
-                {pedido.itens?.length > 2 && (
-                  <p className="text-xs text-gray-400">+ {pedido.itens.length - 2} outro(s)</p>
-                )}
-              </div>
-            </div>
+            <div className="space-y-2"><div className="flex items-center gap-2 text-sm text-gray-600"><BuildingOfficeIcon className="w-4 h-4" />{pedido.unidade}</div><div className="flex items-center gap-2 text-sm text-gray-600"><ShoppingCartIcon className="w-4 h-4" />{pedido.itens?.length || 0} produtos</div><div className="flex items-center gap-2 text-sm text-gray-600"><CalendarIcon className="w-4 h-4" />{formatDate(pedido.dataPedido)}</div></div>
           </div>
         ))}
-        {filteredPedidos.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-lg border">
-            <ShoppingCartIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">Nenhum pedido encontrado</p>
-          </div>
-        )}
       </div>
 
       {/* Paginação */}
-      {totalPages > 1 && (
-        <div className="flex justify-center items-center gap-2 mt-6">
-          <button
-            onClick={goToPreviousPage}
-            disabled={currentPage === 1}
-            className={`p-2 rounded-lg border transition ${
-              currentPage === 1
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <ChevronLeftIcon className="w-5 h-5" />
-          </button>
-          
-          <div className="flex gap-1">
-            <div className="hidden sm:flex gap-1">
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => goToPage(pageNum)}
-                    className={`w-10 h-10 rounded-lg border transition ${
-                      currentPage === pageNum
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-            
-            <div className="sm:hidden">
-              <span className="px-4 py-2 text-sm text-gray-600">
-                Página {currentPage} de {totalPages}
-              </span>
-            </div>
-          </div>
-          
-          <button
-            onClick={goToNextPage}
-            disabled={currentPage === totalPages}
-            className={`p-2 rounded-lg border transition ${
-              currentPage === totalPages
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <ChevronRightIcon className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {filteredPedidos.length > 0 && (
-        <div className="text-center text-sm text-gray-500">
-          Mostrando {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, filteredPedidos.length)} de {filteredPedidos.length} pedidos
-        </div>
-      )}
+      {totalPages > 1 && (<div className="flex justify-center items-center gap-2 mt-6"><button onClick={goToPreviousPage} disabled={currentPage === 1} className={`p-2 rounded-lg border ${currentPage === 1 ? 'bg-gray-100 text-gray-400' : 'bg-white hover:bg-gray-50'}`}><ChevronLeftIcon className="w-5 h-5" /></button><span className="px-4 py-2 text-sm">Página {currentPage} de {totalPages}</span><button onClick={goToNextPage} disabled={currentPage === totalPages} className={`p-2 rounded-lg border ${currentPage === totalPages ? 'bg-gray-100 text-gray-400' : 'bg-white hover:bg-gray-50'}`}><ChevronRightIcon className="w-5 h-5" /></button></div>)}
 
       {/* Modal de Detalhes */}
       {showDetalhesModal && selectedPedido && (
@@ -1332,6 +1231,233 @@ export default function GerenciarPedidos() {
                 )}
                 <button onClick={() => setShowDetalhesModal(false)} className="px-3 py-1.5 sm:px-4 sm:py-2 border rounded-lg hover:bg-gray-50 text-sm">
                   Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Criar Novo Pedido */}
+      {showCriarModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-2 sm:p-4 z-50" onClick={() => setShowCriarModal(false)}>
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto mx-2" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b p-3 sm:p-4 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold">Novo Pedido</h2>
+                <p className="text-xs sm:text-sm text-gray-500">Preencha as informações do pedido</p>
+              </div>
+              <button onClick={() => setShowCriarModal(false)} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {/* Seção 1: Informações do Solicitante */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <UserIcon className="w-5 h-5 text-blue-600" />
+                  Dados do Solicitante
+                </h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Selecione o Dentista *
+                    </label>
+                    <select
+                      value={novoPedido.dentistaId}
+                      onChange={(e) => handleSelecionarDentista(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Selecione um dentista</option>
+                      {dentistas.map(dentista => (
+                        <option key={dentista.id} value={dentista.id}>
+                          👨‍⚕️ {dentista.nome} {dentista.unidade ? `- 🏢 ${dentista.unidade}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {dentistas.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        ⚠️ Nenhum dentista ativo encontrado. Cadastre dentistas em "Gerenciar Usuários"
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Unidade *
+                    </label>
+                    <input
+                      type="text"
+                      value={novoPedido.unidade}
+                      onChange={(e) => setNovoPedido({ ...novoPedido, unidade: e.target.value })}
+                      placeholder="Unidade do dentista"
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      readOnly
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      A unidade é carregada automaticamente do cadastro do dentista
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de Pedido *
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        value="avulso"
+                        checked={novoPedido.tipo === 'avulso'}
+                        onChange={(e) => setNovoPedido({ ...novoPedido, tipo: e.target.value })}
+                        className="text-blue-600"
+                      />
+                      <span>📦 Pedido Avulso</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        value="mensal"
+                        checked={novoPedido.tipo === 'mensal'}
+                        onChange={(e) => setNovoPedido({ ...novoPedido, tipo: e.target.value })}
+                        className="text-blue-600"
+                      />
+                      <span>📅 Pedido Mensal</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção 2: Adicionar Produtos */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <ShoppingCartIcon className="w-5 h-5 text-blue-600" />
+                  Adicionar Produtos
+                </h3>
+
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Produto *
+                      </label>
+                      <select
+                        value={produtoSelecionado.id}
+                        onChange={(e) => {
+                          const produto = produtosDisponiveis.find(p => p.id === e.target.value);
+                          if (produto) {
+                            setProdutoSelecionado({
+                              id: produto.id,
+                              nome: produto.nome,
+                              marca: produto.marca || '',
+                              quantidade: 1
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Selecione um produto</option>
+                        {produtosDisponiveis.map(produto => (
+                          <option key={produto.id} value={produto.id}>
+                            {produto.nome} {produto.marca ? `- ${produto.marca}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Marca
+                      </label>
+                      <input
+                        type="text"
+                        value={produtoSelecionado.marca}
+                        onChange={(e) => setProdutoSelecionado({ ...produtoSelecionado, marca: e.target.value })}
+                        placeholder="Marca do produto"
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Quantidade *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={produtoSelecionado.quantidade}
+                        onChange={(e) => setProdutoSelecionado({ ...produtoSelecionado, quantidade: parseInt(e.target.value) || 1 })}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleAdicionarItem}
+                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    + Adicionar Produto
+                  </button>
+                </div>
+
+                {/* Lista de Produtos Adicionados */}
+                {novoPedido.itens.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 font-medium text-sm">
+                      Produtos Adicionados ({novoPedido.itens.length})
+                    </div>
+                    <div className="divide-y">
+                      {novoPedido.itens.map((item, index) => (
+                        <div key={index} className="px-4 py-3 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-sm">{item.produtoNome}</p>
+                            {item.marca && <p className="text-xs text-gray-500">Marca: {item.marca}</p>}
+                            <p className="text-xs text-gray-600">Quantidade: {item.quantidade} un.</p>
+                          </div>
+                          <button
+                            onClick={() => handleRemoverItem(index)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Seção 3: Observações */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Observações (opcional)
+                </label>
+                <textarea
+                  value={novoPedido.observacoes}
+                  onChange={(e) => setNovoPedido({ ...novoPedido, observacoes: e.target.value })}
+                  rows="3"
+                  placeholder="Informações adicionais sobre o pedido..."
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex flex-wrap justify-end gap-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowCriarModal(false)}
+                  className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSalvarPedido}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Criar Pedido
                 </button>
               </div>
             </div>
