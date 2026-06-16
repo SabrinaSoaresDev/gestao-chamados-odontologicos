@@ -95,48 +95,64 @@ export default function GerenciarPedidos() {
   }, []);
   
   // Carregar dentistas da coleção de usuários (tipo = 'dentista' e ativo = true)
-  useEffect(() => {
-    const usuariosRef = collection(db, 'usuarios');
-    const q = query(
-      usuariosRef, 
-      where('role', '==', 'dentista'),
-      where('ativo', '==', true)
-    );
+ // Carregar produtos disponíveis APENAS com estoque > 0
+useEffect(() => {
+  const usuariosRef = collection(db, 'usuarios');
+  const q = query(
+    usuariosRef, 
+    where('role', '==', 'dentista'),
+    where('ativo', '==', true)
+  );
+  
+  const unsubscribeDentistas = onSnapshot(q, (snapshot) => {
+    const dentistasData = snapshot.docs.map(doc => ({
+      id: doc.id,
+      uid: doc.id,
+      nome: doc.data().nome || '',
+      email: doc.data().email || '',
+      unidade: doc.data().unidade || '',
+      telefone: doc.data().telefone || '',
+      especialidade: doc.data().especialidade || '',
+      ativo: doc.data().ativo || false
+    }));
     
-    const unsubscribeDentistas = onSnapshot(q, (snapshot) => {
-      const dentistasData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        uid: doc.id,
-        nome: doc.data().nome || '',
-        email: doc.data().email || '',
-        unidade: doc.data().unidade || '',
-        telefone: doc.data().telefone || '',
-        especialidade: doc.data().especialidade || '',
-        ativo: doc.data().ativo || false
-      }));
-      
-      console.log('🦷 Dentistas carregados:', dentistasData);
-      setDentistas(dentistasData);
-    }, (error) => {
-      console.error('Erro ao carregar dentistas:', error);
-      toast.error('Erro ao carregar lista de dentistas');
-    });
+    console.log('🦷 Dentistas carregados:', dentistasData);
+    setDentistas(dentistasData);
+  }, (error) => {
+    console.error('Erro ao carregar dentistas:', error);
+    toast.error('Erro ao carregar lista de dentistas');
+  });
 
-    // Carregar produtos disponíveis
-    const produtosRef = collection(db, 'produtos');
-    const unsubscribeProdutos = onSnapshot(produtosRef, (snapshot) => {
-      const produtosData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setProdutosDisponiveis(produtosData);
+  // Carregar produtos disponíveis APENAS com estoque > 0 e ORDENADOS por nome (A-Z)
+  const produtosRef = collection(db, 'produtos');
+  const produtosQuery = query(
+    produtosRef,
+    orderBy('nome', 'asc') // <-- ADICIONE ESTA LINHA PARA ORDENAR A-Z
+  );
+  
+  const unsubscribeProdutos = onSnapshot(produtosQuery, (snapshot) => {
+    const produtosData = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // FILTRAR apenas produtos com estoque > 0
+    const produtosComEstoque = produtosData.filter(produto => {
+      const estoque = produto.estoque !== undefined ? produto.estoque : produto.quantidade;
+      return (estoque || 0) > 0;
     });
+    
+    console.log('📦 Produtos com estoque (ordenados):', produtosComEstoque.length);
+    setProdutosDisponiveis(produtosComEstoque);
+  }, (error) => {
+    console.error('Erro ao carregar produtos:', error);
+  });
 
-    return () => {
-      unsubscribeDentistas();
-      unsubscribeProdutos();
-    };
-  }, []);
+  return () => {
+    unsubscribeDentistas();
+    unsubscribeProdutos();
+  };
+}, []);
   
   // Sincronizar selectedPedido quando a lista de pedidos mudar
   useEffect(() => {
@@ -181,12 +197,28 @@ export default function GerenciarPedidos() {
       return;
     }
 
+    // Verificar estoque disponível
+    const produto = produtosDisponiveis.find(p => p.id === produtoSelecionado.id);
+    if (produto) {
+      const estoque = produto.estoque !== undefined ? produto.estoque : produto.quantidade;
+      if (produtoSelecionado.quantidade > estoque) {
+        toast.error(`Estoque insuficiente! Disponível: ${estoque} unidades`);
+        return;
+      }
+    }
+
     const produtoExistente = novoPedido.itens.find(item => item.produtoId === produtoSelecionado.id);
     
     if (produtoExistente) {
+      const novaQuantidade = produtoExistente.quantidade + produtoSelecionado.quantidade;
+      const estoque = produto ? (produto.estoque !== undefined ? produto.estoque : produto.quantidade) : 0;
+      if (novaQuantidade > estoque) {
+        toast.error(`Quantidade total (${novaQuantidade}) excede o estoque disponível (${estoque})`);
+        return;
+      }
       const novosItens = novoPedido.itens.map(item =>
         item.produtoId === produtoSelecionado.id
-          ? { ...item, quantidade: item.quantidade + produtoSelecionado.quantidade }
+          ? { ...item, quantidade: novaQuantidade }
           : item
       );
       setNovoPedido({ ...novoPedido, itens: novosItens });
@@ -236,6 +268,20 @@ export default function GerenciarPedidos() {
       return;
     }
 
+    // Verificar estoque de todos os itens antes de enviar
+    for (const item of novoPedido.itens) {
+      const produto = produtosDisponiveis.find(p => p.id === item.produtoId);
+      if (!produto) {
+        toast.error(`Produto ${item.produtoNome} não encontrado no estoque`);
+        return;
+      }
+      const estoque = produto.estoque !== undefined ? produto.estoque : produto.quantidade;
+      if (item.quantidade > estoque) {
+        toast.error(`Estoque insuficiente para ${item.produtoNome}. Disponível: ${estoque}`);
+        return;
+      }
+    }
+
     try {
       const pedidoData = {
         dentistaId: novoPedido.dentistaId,
@@ -281,10 +327,9 @@ export default function GerenciarPedidos() {
         ...novoPedido,
         dentistaId: dentista.id,
         dentistaNome: dentista.nome,
-        unidade: dentista.unidade || '' // Puxa a unidade do cadastro do dentista
+        unidade: dentista.unidade || ''
       });
       
-      // Mostrar feedback visual
       toast.success(`Dentista selecionado: ${dentista.nome} - ${dentista.unidade || 'Unidade não cadastrada'}`);
     }
   };
@@ -1361,12 +1406,20 @@ export default function GerenciarPedidos() {
                         className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Selecione um produto</option>
-                        {produtosDisponiveis.map(produto => (
-                          <option key={produto.id} value={produto.id}>
-                            {produto.nome} {produto.marca ? `- ${produto.marca}` : ''}
-                          </option>
-                        ))}
+                        {produtosDisponiveis.map(produto => {
+                          const estoque = produto.estoque !== undefined ? produto.estoque : produto.quantidade;
+                          return (
+                            <option key={produto.id} value={produto.id}>
+                              {produto.nome} {produto.marca ? `- ${produto.marca}` : ''} (Estoque: {estoque || 0})
+                            </option>
+                          );
+                        })}
                       </select>
+                      {produtosDisponiveis.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          ⚠️ Nenhum produto disponível em estoque
+                        </p>
+                      )}
                     </div>
 
                     <div>

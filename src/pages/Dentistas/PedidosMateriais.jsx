@@ -72,13 +72,14 @@ export default function PedidosMateriais() {
     fetchUnidadeDentista();
   }, [userData]);
 
-  // Buscar pedidos
+  // Buscar pedidos e produtos
   useEffect(() => {
     if (!userData?.uid) {
       setLoading(false);
       return;
     }
 
+    // Buscar pedidos do dentista
     const pedidosQuery = query(
       collection(db, 'pedidos'),
       where('dentistaId', '==', userData.uid)
@@ -97,13 +98,28 @@ export default function PedidosMateriais() {
       setLoading(false);
     });
 
-    const produtosQuery = query(collection(db, 'produtos'), orderBy('nome', 'asc'));
+    // Buscar todos os produtos e filtrar por estoque
+    const produtosQuery = query(
+      collection(db, 'produtos'),
+      orderBy('nome', 'asc')
+    );
+    
     const unsubscribeProdutos = onSnapshot(produtosQuery, (snapshot) => {
       const produtosData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setProdutos(produtosData);
+      
+      // FILTRAR produtos com estoque > 0
+      // Verifica tanto 'estoque' quanto 'quantidade' como fallback
+      const produtosComEstoque = produtosData.filter(produto => {
+        const estoque = produto.estoque !== undefined ? produto.estoque : produto.quantidade;
+        return (estoque || 0) > 0;
+      });
+      
+      setProdutos(produtosComEstoque);
+    }, (error) => {
+      console.error('Erro ao buscar produtos:', error);
     });
 
     return () => {
@@ -291,7 +307,6 @@ export default function PedidosMateriais() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Meus Pedidos de Materiais</h1>
           <p className="text-gray-600">Solicite materiais para sua unidade</p>
-         
         </div>
         <button
           onClick={() => {
@@ -583,8 +598,17 @@ export default function PedidosMateriais() {
                 </select>
 
                 <div className="flex gap-2 mb-3">
-                  <input type="number" min="1" value={quantidadeProduto} onChange={(e) => setQuantidadeProduto(Number(e.target.value))} className="flex-1 px-3 py-2 border rounded-lg" placeholder="Quantidade" />
-                  <button type="button" onClick={adicionarItem} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Adicionar</button>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={quantidadeProduto} 
+                    onChange={(e) => setQuantidadeProduto(Number(e.target.value))} 
+                    className="flex-1 px-3 py-2 border rounded-lg" 
+                    placeholder="Quantidade" 
+                  />
+                  <button type="button" onClick={adicionarItem} className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    + Adicionar
+                  </button>
                 </div>
 
                 {formData.itens.length > 0 && (
@@ -631,12 +655,22 @@ export default function PedidosMateriais() {
               {/* Observações */}
               <div>
                 <label className="block text-sm font-medium mb-1">Observações</label>
-                <textarea rows="2" value={formData.observacoes} onChange={(e) => setFormData({...formData, observacoes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Informações adicionais sobre o pedido..." />
+                <textarea 
+                  rows="2" 
+                  value={formData.observacoes} 
+                  onChange={(e) => setFormData({...formData, observacoes: e.target.value})} 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                  placeholder="Informações adicionais sobre o pedido..." 
+                />
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">{editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border rounded-lg">
+                  Cancelar
+                </button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">
+                  {editingPedido ? 'Atualizar Pedido' : 'Enviar Pedido'}
+                </button>
               </div>
             </form>
           </div>
