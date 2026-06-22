@@ -124,12 +124,12 @@ export default function Login() {
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
 
-          <p className="text-center text-sm text-gray-600 mt-4">
+          {/* <p className="text-center text-sm text-gray-600 mt-4">
             Não tem uma conta?{' '}
             <Link to="/register" className="text-blue-600 hover:underline font-medium">
                 Cadastre-se
             </Link>
-          </p>
+          </p> */}
         </form>
       </div>
     </div>
